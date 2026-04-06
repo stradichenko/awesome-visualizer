@@ -146,6 +146,7 @@
     }
 
     // -------------------------------------------------------------- Search
+    // Supports: * (wildcard), | (or), & or space (and), case-insensitive
     var searchTokens = null;
 
     function buildSearchIndex() {
@@ -158,7 +159,8 @@
                 (r.description || "") + " " +
                 (r.topics || []).join(" ") + " " +
                 (r.language || "") + " " +
-                (r.owner || "")
+                (r.owner || "") + " " +
+                (r.category || "")
             ).toLowerCase();
         }
     }
@@ -167,17 +169,46 @@
         if (!searchTokens) buildSearchIndex();
         if (!query) return state.repos.slice();
 
-        var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+        // & is explicit AND (same as space)
+        var normalized = query.replace(/&/g, " ");
+        // Split on | for OR groups
+        var orGroups = normalized.split("|");
         var results = [];
+
         for (var i = 0; i < state.repos.length; i++) {
-            var match = true;
-            for (var t = 0; t < terms.length; t++) {
-                if (searchTokens[i].indexOf(terms[t]) === -1) {
-                    match = false;
+            var haystack = searchTokens[i];
+            var matched = false;
+
+            for (var g = 0; g < orGroups.length; g++) {
+                var terms = orGroups[g].trim().toLowerCase().split(/\s+/).filter(Boolean);
+                if (terms.length === 0) continue;
+                var allMatch = true;
+
+                for (var t = 0; t < terms.length; t++) {
+                    // Escape regex specials except *, convert * to .*
+                    var pattern = terms[t]
+                        .replace(/[.+?^${}()[\]\\]/g, "\\$&")
+                        .replace(/\*/g, ".*");
+                    try {
+                        if (!new RegExp(pattern).test(haystack)) {
+                            allMatch = false;
+                            break;
+                        }
+                    } catch (e) {
+                        if (haystack.indexOf(terms[t]) === -1) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (allMatch) {
+                    matched = true;
                     break;
                 }
             }
-            if (match) results.push(state.repos[i]);
+
+            if (matched) results.push(state.repos[i]);
         }
         return results;
     }
@@ -445,9 +476,10 @@
 
         // Sort
         els.sortSelect.addEventListener("change", function () {
-            var parts = this.value.split("-");
-            state.sortKey = parts[0];
-            state.sortDir = parts[1] || "desc";
+            var val = this.value;
+            var lastDash = val.lastIndexOf("-");
+            state.sortKey = val.substring(0, lastDash);
+            state.sortDir = val.substring(lastDash + 1) || "desc";
             applyAndRender();
         });
 
@@ -530,9 +562,9 @@
             els.filterHealth.value = String(state.minHealth);
         }
         if (params.sort) {
-            var sp = params.sort.split("-");
-            state.sortKey = sp[0];
-            state.sortDir = sp[1] || "desc";
+            var lastDash = params.sort.lastIndexOf("-");
+            state.sortKey = params.sort.substring(0, lastDash);
+            state.sortDir = params.sort.substring(lastDash + 1) || "desc";
             els.sortSelect.value = params.sort;
         }
         if (params.view) {

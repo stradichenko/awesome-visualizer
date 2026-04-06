@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Awesome Visualizer - Data Pipeline
+"""Awesome Visualizer - Data Pipeline (Deep Crawl)
 
-Fetches awesome list metadata and repo metrics from GitHub.
-Outputs site/data/repos.json for the static site.
+Two-level crawl:
+1. Fetch sindresorhus/awesome README -> discover awesome sub-list repos
+2. For each sub-list, fetch its README -> discover individual project repos
+3. Batch-query GitHub GraphQL API for metrics on all discovered repos
+4. Write site/data/repos.json
 
 Usage:
     nix develop --command python scripts/fetch_data.py
@@ -27,35 +30,9 @@ MASTER_LIST = "sindresorhus/awesome"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
 BATCH_SIZE = 40
 NINETY_DAYS_AGO = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-
-CATEGORIES = {
-    "Platforms": "platforms",
-    "Programming Languages": "programming-languages",
-    "Front-End Development": "front-end",
-    "Back-End Development": "back-end",
-    "Computer Science": "computer-science",
-    "Big Data": "big-data",
-    "Theory": "theory",
-    "Books": "books",
-    "Editors": "editors",
-    "Gaming": "gaming",
-    "Development Environment": "dev-environment",
-    "Entertainment": "entertainment",
-    "Databases": "databases",
-    "Media": "media",
-    "Learn": "learn",
-    "Security": "security",
-    "Content Management Systems": "cms",
-    "Hardware": "hardware",
-    "Business": "business",
-    "Work": "work",
-    "Networking": "networking",
-    "Decentralized Systems": "decentralized",
-    "Health and Social Science": "health-social-science",
-    "Events": "events",
-    "Testing": "testing",
-    "Miscellaneous": "miscellaneous",
-}
+MAX_SUBLISTS = 500
+REST_DELAY = 0.3
+GQL_DELAY = 0.5
 
 
 def get_token():
@@ -111,51 +88,90 @@ def github_graphql(query, token):
     return data.get("data") or {}
 
 
-def fetch_master_readme(token):
-    """Fetch and decode the README of sindresorhus/awesome."""
-    data = github_rest(f"repos/{MASTER_LIST}/readme", token)
+def slugify(text):
+    """Convert display text to a URL-friendly slug."""
+    s = text.lower().strip()
+    s = re.sub(r"[^a-z0-9\s-]", "", s)
+    s = re.sub(r"[\s-]+", "-", s)
+    return s.strip("-")
+
+
+def fetch_repo_readme(full_name, token):
+    """Fetch and decode a repository's README."""
+    data = github_rest(f"repos/{full_name}/readme", token)
     if not data or "content" not in data:
-        print("Failed to fetch master README", file=sys.stderr)
-        sys.exit(1)
-    return base64.b64decode(data["content"]).decode("utf-8")
+        return None
+    try:
+        return base64.b64decode(data["content"]).decode("utf-8")
+    except Exception:
+        return None
 
 
-def parse_awesome_readme(readme_text):
-    """Extract GitHub repo links grouped by category from the master README."""
-    repos = []
-    current_category = "miscellaneous"
+def extract_github_repo_links(text):
+    """Extract [name](github.com/owner/repo) links from markdown."""
+    links = []
+    for name, repo_path in re.findall(
+        r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
+        text,
+    ):
+        clean = repo_path.strip("/")
+        if clean.count("/") == 1:
+            links.append({"full_name": clean, "link_name": name})
+    return links
+
+
+def parse_master_readme(readme_text):
+    """Parse sindresorhus/awesome README to find sub-list repos with section info."""
+    sublists = []
+    current_section = "Miscellaneous"
+    skip_sections = {"contents", "related", "license", "about", "meta"}
 
     for line in readme_text.split("\n"):
         header = re.match(r"^##\s+(.+)", line)
         if header:
             section = header.group(1).strip()
-            if section in CATEGORIES:
-                current_category = CATEGORIES[section]
+            if section.lower() not in skip_sections:
+                current_section = section
             continue
 
-        # Match [Text](https://github.com/owner/repo...)
         for name, repo_path in re.findall(
             r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
             line,
         ):
             clean = repo_path.strip("/")
             if clean.count("/") == 1:
-                repos.append({
+                sublists.append({
                     "full_name": clean,
                     "link_name": name,
-                    "category": current_category,
+                    "section": current_section,
+                    "category_name": name,
+                    "category_id": slugify(name),
                 })
 
-    # Deduplicate, keep first occurrence
     seen = set()
     unique = []
-    for r in repos:
-        key = r["full_name"].lower()
+    for sl in sublists:
+        key = sl["full_name"].lower()
         if key not in seen:
             seen.add(key)
-            unique.append(r)
+            unique.append(sl)
 
-    return unique
+    return unique[:MAX_SUBLISTS]
+
+
+def parse_sublist_readme(readme_text, category_name, category_id, source_repo):
+    """Extract individual project repos from a sub-list's README."""
+    links = extract_github_repo_links(readme_text)
+    return [
+        {
+            "full_name": link["full_name"],
+            "link_name": link["link_name"],
+            "category": category_id,
+            "category_name": category_name,
+        }
+        for link in links
+        if link["full_name"].lower() != source_repo.lower()
+    ]
 
 
 def build_graphql_query(batch):
@@ -200,7 +216,6 @@ def compute_health(rec):
     """Compute a 0-100 health score from repo metrics."""
     score = 0
 
-    # Stars (0-25)
     stars = rec.get("stars", 0)
     if stars >= 10000:
         score += 25
@@ -213,7 +228,6 @@ def compute_health(rec):
     else:
         score += 2
 
-    # Recent commits (0-25)
     c90 = rec.get("commits_90d", 0)
     if c90 >= 50:
         score += 25
@@ -224,7 +238,6 @@ def compute_health(rec):
     elif c90 >= 1:
         score += 8
 
-    # Freshness (0-25)
     push = rec.get("last_push", "")
     if push:
         try:
@@ -243,7 +256,6 @@ def compute_health(rec):
         except (ValueError, TypeError):
             pass
 
-    # Community signals (0-25)
     if rec.get("license"):
         score += 8
     if rec.get("description"):
@@ -263,7 +275,6 @@ def process_batch_result(data, batch_info):
         if not rd:
             continue
 
-        # Commits in 90 days
         commits_90d = 0
         ref = rd.get("defaultBranchRef")
         if ref and ref.get("target"):
@@ -271,7 +282,6 @@ def process_batch_result(data, batch_info):
             if hist:
                 commits_90d = hist.get("totalCount", 0)
 
-        # Topics
         topics = []
         for node in (rd.get("repositoryTopics") or {}).get("nodes", []):
             topics.append(node["topic"]["name"])
@@ -305,20 +315,60 @@ def process_batch_result(data, batch_info):
 def main():
     token = get_token()
 
+    # Step 1: Fetch master README
     print(f"Fetching master README from {MASTER_LIST}...")
-    readme = fetch_master_readme(token)
+    readme = fetch_repo_readme(MASTER_LIST, token)
+    if not readme:
+        print("Failed to fetch master README", file=sys.stderr)
+        sys.exit(1)
 
-    print("Parsing repository links...")
-    repo_links = parse_awesome_readme(readme)
-    print(f"  Found {len(repo_links)} unique repositories")
+    # Step 2: Parse master README for sub-lists
+    print("Parsing sub-list links...")
+    sublists = parse_master_readme(readme)
+    print(f"  Found {len(sublists)} sub-lists")
 
+    # Step 3: Crawl each sub-list for project repos
+    print("\nCrawling sub-lists for project repos...")
+    all_links = []
+    cat_names = {}
+    for i, sl in enumerate(sublists):
+        tag = f"[{i + 1}/{len(sublists)}]"
+        cid = sl["category_id"]
+        cat_names[cid] = sl["category_name"]
+        print(f"  {tag} {sl['full_name']} ({sl['category_name']})...", end="", flush=True)
+
+        subreadme = fetch_repo_readme(sl["full_name"], token)
+        if not subreadme:
+            print(" SKIP")
+            continue
+
+        links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
+        print(f" {len(links)} repos")
+        all_links.extend(links)
+
+        if i < len(sublists) - 1:
+            time.sleep(REST_DELAY)
+
+    # Step 4: Deduplicate (first-seen category wins)
+    seen = set()
+    unique = []
+    for link in all_links:
+        key = link["full_name"].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(link)
+
+    print(f"\n  {len(unique)} unique project repos after deduplication")
+
+    # Step 5: Batch query GraphQL for metrics
+    print("\nFetching GitHub metrics...")
     all_repos = []
-    total_batches = (len(repo_links) + BATCH_SIZE - 1) // BATCH_SIZE
+    total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
 
     for batch_num in range(total_batches):
         start = batch_num * BATCH_SIZE
-        batch = repo_links[start : start + BATCH_SIZE]
-        print(f"  Querying batch {batch_num + 1}/{total_batches} ({len(batch)} repos)...")
+        batch = unique[start : start + BATCH_SIZE]
+        print(f"  Batch {batch_num + 1}/{total_batches} ({len(batch)} repos)...", flush=True)
 
         query = build_graphql_query(batch)
         data = github_graphql(query, token)
@@ -326,24 +376,20 @@ def main():
         all_repos.extend(repos)
 
         if batch_num < total_batches - 1:
-            time.sleep(0.5)
+            time.sleep(GQL_DELAY)
 
-    # Build category summary
+    # Step 6: Build category and language summaries
     cat_counts = {}
     for r in all_repos:
         c = r["category"]
         cat_counts[c] = cat_counts.get(c, 0) + 1
 
     categories = []
-    for cat_id, count in sorted(cat_counts.items()):
-        display = next(
-            (k for k, v in CATEGORIES.items() if v == cat_id),
-            cat_id.replace("-", " ").title(),
-        )
-        categories.append({"id": cat_id, "name": display, "count": count})
+    for cid, count in sorted(cat_counts.items()):
+        name = cat_names.get(cid, cid.replace("-", " ").title())
+        categories.append({"id": cid, "name": name, "count": count})
     categories.sort(key=lambda c: c["name"])
 
-    # Build language summary
     lang_counts = {}
     for r in all_repos:
         lang = r.get("language", "")
