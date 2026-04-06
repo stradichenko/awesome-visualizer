@@ -8,52 +8,192 @@
     {
       "id": "cli-apps",
       "name": "CLI Apps",
-      "count": 4
+      "count": 4,
+      "avg_health": 82,
+      "subcategory_count": 3,
+      "top_languages": [
+        {
+          "name": "Rust",
+          "count": 2
+        },
+        {
+          "name": "Go",
+          "count": 1
+        },
+        {
+          "name": "C",
+          "count": 1
+        }
+      ],
+      "source_repo": "agarrharr/awesome-cli-apps",
+      "url": "https://github.com/agarrharr/awesome-cli-apps"
     },
     {
       "id": "devops",
       "name": "DevOps",
-      "count": 4
+      "count": 4,
+      "avg_health": 95,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "TypeScript",
+          "count": 1
+        },
+        {
+          "name": "Python",
+          "count": 1
+        },
+        {
+          "name": "Go",
+          "count": 1
+        },
+        {
+          "name": "Ruby",
+          "count": 1
+        }
+      ],
+      "source_repo": "wmariuss/awesome-devops",
+      "url": "https://github.com/wmariuss/awesome-devops"
     },
     {
       "id": "go",
       "name": "Go",
-      "count": 5
+      "count": 5,
+      "avg_health": 91,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "Go",
+          "count": 5
+        }
+      ],
+      "source_repo": "avelino/awesome-go",
+      "url": "https://github.com/avelino/awesome-go"
     },
     {
       "id": "javascript",
       "name": "JavaScript",
-      "count": 4
+      "count": 4,
+      "avg_health": 73,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "JavaScript",
+          "count": 4
+        }
+      ],
+      "source_repo": "sorrycc/awesome-javascript",
+      "url": "https://github.com/sorrycc/awesome-javascript"
     },
     {
       "id": "machine-learning",
       "name": "Machine Learning",
-      "count": 5
+      "count": 5,
+      "avg_health": 97,
+      "subcategory_count": 3,
+      "top_languages": [
+        {
+          "name": "Python",
+          "count": 3
+        },
+        {
+          "name": "C++",
+          "count": 2
+        }
+      ],
+      "source_repo": "josephmisiti/awesome-machine-learning",
+      "url": "https://github.com/josephmisiti/awesome-machine-learning"
     },
     {
       "id": "nodejs",
       "name": "Node.js",
-      "count": 5
+      "count": 5,
+      "avg_health": 86,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "JavaScript",
+          "count": 3
+        },
+        {
+          "name": "TypeScript",
+          "count": 2
+        }
+      ],
+      "source_repo": "sindresorhus/awesome-nodejs",
+      "url": "https://github.com/sindresorhus/awesome-nodejs"
     },
     {
       "id": "python",
       "name": "Python",
-      "count": 6
+      "count": 6,
+      "avg_health": 92,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "Python",
+          "count": 6
+        }
+      ],
+      "source_repo": "vinta/awesome-python",
+      "url": "https://github.com/vinta/awesome-python"
     },
     {
       "id": "react",
       "name": "React",
-      "count": 5
+      "count": 5,
+      "avg_health": 99,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "TypeScript",
+          "count": 3
+        },
+        {
+          "name": "JavaScript",
+          "count": 1
+        },
+        {
+          "name": "C++",
+          "count": 1
+        }
+      ],
+      "source_repo": "enaqx/awesome-react",
+      "url": "https://github.com/enaqx/awesome-react"
     },
     {
       "id": "rust",
       "name": "Rust",
-      "count": 4
+      "count": 4,
+      "avg_health": 89,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "Rust",
+          "count": 4
+        }
+      ],
+      "source_repo": "rust-unofficial/awesome-rust",
+      "url": "https://github.com/rust-unofficial/awesome-rust"
     },
     {
       "id": "vue",
       "name": "Vue",
-      "count": 6
+      "count": 6,
+      "avg_health": 84,
+      "subcategory_count": 4,
+      "top_languages": [
+        {
+          "name": "TypeScript",
+          "count": 4
+        },
+        {
+          "name": "JavaScript",
+          "count": 2
+        }
+      ],
+      "source_repo": "vuejs/awesome-vue",
+      "url": "https://github.com/vuejs/awesome-vue"
     }
   ],
   "languages": [

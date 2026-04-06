@@ -355,11 +355,15 @@ def main():
     # Step 3: Crawl each sub-list for project repos
     print("\nCrawling sub-lists for project repos...")
     all_links = []
-    cat_names = {}
+    cat_meta = {}  # category_id -> {name, source_repo, url}
     for i, sl in enumerate(sublists):
         tag = f"[{i + 1}/{len(sublists)}]"
         cid = sl["category_id"]
-        cat_names[cid] = sl["category_name"]
+        cat_meta[cid] = {
+            "name": sl["category_name"],
+            "source_repo": sl["full_name"],
+            "url": f"https://github.com/{sl['full_name']}",
+        }
         print(f"  {tag} {sl['full_name']} ({sl['category_name']})...", end="", flush=True)
 
         subreadme = fetch_repo_readme(sl["full_name"], token)
@@ -405,14 +409,39 @@ def main():
 
     # Step 6: Build category, subcategory, and language summaries
     cat_counts = {}
+    cat_health = {}  # cid -> [health scores]
+    cat_langs = {}   # cid -> {lang: count}
+    cat_subcats = {} # cid -> set of subcategory_ids
     for r in all_repos:
         c = r["category"]
         cat_counts[c] = cat_counts.get(c, 0) + 1
+        cat_health.setdefault(c, []).append(r.get("health", 0))
+        lang = r.get("language", "")
+        if lang:
+            cat_langs.setdefault(c, {}).setdefault(lang, 0)
+            cat_langs[c][lang] += 1
+        sid = r.get("subcategory_id", "general")
+        cat_subcats.setdefault(c, set()).add(sid)
 
     categories = []
     for cid, count in sorted(cat_counts.items()):
-        name = cat_names.get(cid, cid.replace("-", " ").title())
-        categories.append({"id": cid, "name": name, "count": count})
+        meta = cat_meta.get(cid, {})
+        name = meta.get("name", cid.replace("-", " ").title())
+        health_list = cat_health.get(cid, [])
+        avg_health = round(sum(health_list) / len(health_list)) if health_list else 0
+        top_langs = sorted(
+            cat_langs.get(cid, {}).items(), key=lambda x: -x[1]
+        )[:5]
+        categories.append({
+            "id": cid,
+            "name": name,
+            "count": count,
+            "source_repo": meta.get("source_repo", ""),
+            "url": meta.get("url", ""),
+            "avg_health": avg_health,
+            "subcategory_count": len(cat_subcats.get(cid, set())),
+            "top_languages": [{"name": l, "count": c} for l, c in top_langs],
+        })
     categories.sort(key=lambda c: c["name"])
 
     # Build subcategory summary grouped by category

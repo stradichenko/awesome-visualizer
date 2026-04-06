@@ -7,6 +7,7 @@
 
     // ------------------------------------------------------------------ State
     var state = {
+        screen: "overview",
         repos: [],
         filtered: [],
         query: "",
@@ -19,6 +20,8 @@
         view: "grid",
         page: 1
     };
+
+    var allData = null;
 
     // ------------------------------------------------------- Language colors
     var LANG_COLORS = {
@@ -72,7 +75,6 @@
             els[refs[i].getAttribute("data-ref")] = refs[i];
         }
         els.searchInput = document.getElementById("search-input");
-        els.filterCategory = document.getElementById("filter-category");
         els.filterSubcategory = document.getElementById("filter-subcategory");
         els.filterLanguage = document.getElementById("filter-language");
         els.filterHealth = document.getElementById("filter-health");
@@ -88,7 +90,7 @@
 
     // -------------------------------------------------------------- Data load
     function loadData() {
-        els["repo-grid"].innerHTML = '<div class="av-loading">Loading repository data...</div>';
+        els["overview-grid"].innerHTML = '<div class="av-loading">Loading repository data...</div>';
 
         fetch("data/repos.json")
             .then(function (r) {
@@ -96,38 +98,47 @@
                 return r.json();
             })
             .then(function (data) {
+                allData = data;
                 state.repos = data.repos || [];
-                populateFilters(data);
+                buildCategoryMap(data.categories || []);
                 updateGlobalStats(data);
                 restoreFromHash();
-                applyAndRender();
+                if (state.screen === "detail" && state.category !== "all") {
+                    showDetail(state.category, true);
+                } else {
+                    showOverview();
+                }
             })
             .catch(function () {
-                els["repo-grid"].innerHTML = '<div class="av-empty"><div class="av-empty-title">Could not load data</div><p>Run the data pipeline or check data/repos.json</p></div>';
+                els["overview-grid"].innerHTML = '<div class="av-empty"><div class="av-empty-title">Could not load data</div><p>Run the data pipeline or check data/repos.json</p></div>';
             });
     }
 
     // --------------------------------------------------- Populate filter menus
     var allSubcategories = [];
 
-    function populateFilters(data) {
-        var cats = data.categories || [];
-        for (var i = 0; i < cats.length; i++) {
-            var opt = document.createElement("option");
-            opt.value = cats[i].id;
-            opt.textContent = cats[i].name + " (" + cats[i].count + ")";
-            els.filterCategory.appendChild(opt);
-        }
-
-        allSubcategories = data.subcategories || [];
+    function populateFilters(catId) {
+        allSubcategories = (allData && allData.subcategories) || [];
         populateSubcategories();
 
-        var langs = data.languages || [];
+        // Populate languages scoped to this category
+        var sel = els.filterLanguage;
+        while (sel.options.length > 1) sel.remove(1);
+        var langCounts = {};
+        for (var i = 0; i < state.repos.length; i++) {
+            var r = state.repos[i];
+            if (r.category !== catId) continue;
+            var lang = r.language;
+            if (lang) langCounts[lang] = (langCounts[lang] || 0) + 1;
+        }
+        var langs = Object.keys(langCounts).sort(function (a, b) {
+            return langCounts[b] - langCounts[a];
+        });
         for (var j = 0; j < langs.length; j++) {
             var lo = document.createElement("option");
-            lo.value = langs[j].name;
-            lo.textContent = langs[j].name + " (" + langs[j].count + ")";
-            els.filterLanguage.appendChild(lo);
+            lo.value = langs[j];
+            lo.textContent = langs[j] + " (" + langCounts[langs[j]] + ")";
+            sel.appendChild(lo);
         }
     }
 
@@ -177,6 +188,144 @@
         if (meta.last_updated) {
             els["last-updated"].textContent = "Updated " + relativeTime(meta.last_updated);
         }
+    }
+
+    // ------------------------------------------------------- Category map
+    var categoryMap = {};
+
+    function buildCategoryMap(cats) {
+        for (var i = 0; i < cats.length; i++) {
+            categoryMap[cats[i].id] = cats[i];
+        }
+    }
+
+    function categoryName(id) {
+        if (!id) return "";
+        var cat = categoryMap[id];
+        return cat ? cat.name : id.replace(/-/g, " ");
+    }
+
+    // ====================================================== Overview screen
+    function showOverview() {
+        state.screen = "overview";
+        state.category = "all";
+        els["overview-screen"].hidden = false;
+        els["detail-screen"].hidden = true;
+        renderOverview();
+        saveToHash();
+    }
+
+    function renderOverview() {
+        var cats = (allData && allData.categories) || [];
+        var grid = els["overview-grid"];
+        grid.textContent = "";
+        if (!cats.length) {
+            grid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No categories found</div></div>';
+            return;
+        }
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < cats.length; i++) {
+            frag.appendChild(createCategoryCard(cats[i]));
+        }
+        grid.appendChild(frag);
+    }
+
+    function createCategoryCard(cat) {
+        var card = document.createElement("article");
+        card.className = "av-catcard";
+        card.setAttribute("role", "listitem");
+        card.setAttribute("data-action", "open-category");
+        card.setAttribute("data-category-id", cat.id);
+        card.tabIndex = 0;
+
+        var hColor = healthColor(cat.avg_health || 0);
+
+        var topLangs = (cat.top_languages || []).slice(0, 4);
+        var langHtml = "";
+        for (var i = 0; i < topLangs.length; i++) {
+            var lc = LANG_COLORS[topLangs[i].name] || "";
+            langHtml += '<span class="av-catcard-lang">' +
+                (lc ? '<span class="av-lang-dot" style="--lang-color:' + lc + '"></span>' : '') +
+                esc(topLangs[i].name) + '</span>';
+        }
+
+        card.innerHTML =
+            '<header class="av-catcard-header">' +
+                '<h3 class="av-catcard-title">' + esc(cat.name) + '</h3>' +
+                '<span class="av-catcard-count">' + cat.count + ' repos</span>' +
+            '</header>' +
+            (cat.source_repo ? '<p class="av-catcard-source">' + esc(cat.source_repo) + '</p>' : '') +
+            '<div class="av-catcard-stats">' +
+                '<div class="av-catcard-stat">' +
+                    '<span class="av-health-score" style="--health-color:' + hColor + '">' + (cat.avg_health || 0) + '</span>' +
+                    '<span class="av-catcard-stat-label">health</span>' +
+                '</div>' +
+                '<div class="av-catcard-stat">' +
+                    '<span class="av-catcard-stat-val">' + (cat.subcategory_count || 0) + '</span>' +
+                    '<span class="av-catcard-stat-label">subcategories</span>' +
+                '</div>' +
+            '</div>' +
+            (langHtml ? '<div class="av-catcard-langs">' + langHtml + '</div>' : '');
+
+        return card;
+    }
+
+    // ======================================================= Detail screen
+    function showDetail(catId, skipHash) {
+        state.screen = "detail";
+        state.category = catId;
+        els["overview-screen"].hidden = true;
+        els["detail-screen"].hidden = false;
+
+        var cat = categoryMap[catId] || {};
+        els["detail-title"].textContent = cat.name || catId;
+        if (cat.source_repo) {
+            els["detail-source"].href = cat.url || "#";
+            els["detail-source-name"].textContent = cat.source_repo;
+            els["detail-source"].hidden = false;
+        } else {
+            els["detail-source"].hidden = true;
+        }
+
+        // Detail stats
+        var catRepos = [];
+        var detailLangs = {};
+        var healthSum = 0;
+        var subIds = {};
+        for (var i = 0; i < state.repos.length; i++) {
+            var r = state.repos[i];
+            if (r.category !== catId) continue;
+            catRepos.push(r);
+            healthSum += r.health || 0;
+            if (r.language) detailLangs[r.language] = true;
+            subIds[r.subcategory_id || "general"] = true;
+        }
+        els["detail-stat-repos"].textContent = catRepos.length;
+        els["detail-stat-health"].textContent = catRepos.length ? Math.round(healthSum / catRepos.length) : 0;
+        els["detail-stat-subcats"].textContent = Object.keys(subIds).length;
+        els["detail-stat-langs"].textContent = Object.keys(detailLangs).length;
+
+        // Populate filters scoped to this category
+        populateFilters(catId);
+
+        // Reset detail-specific state
+        state.subcategory = "all";
+        state.language = "all";
+        state.minHealth = 0;
+        state.query = "";
+        state.sortKey = "stars";
+        state.sortDir = "desc";
+        state.view = "grid";
+        state.page = 1;
+        els.searchInput.value = "";
+        els.filterSubcategory.value = "all";
+        els.filterLanguage.value = "all";
+        els.filterHealth.value = "0";
+        els.sortSelect.value = "stars-desc";
+
+        searchTokens = null;
+        applyAndRender();
+        if (!skipHash) saveToHash();
     }
 
     // -------------------------------------------------------------- Search
@@ -355,7 +504,6 @@
                 '</div>' +
                 '<div class="av-card-meta">' +
                     '<span class="av-card-time">' + relativeTime(repo.last_push) + '</span>' +
-                    '<span class="av-badge">' + esc(categoryName(repo.category)) + '</span>' +
                     (repo.subcategory && repo.subcategory !== 'General' ? '<span class="av-badge av-badge--sub">' + esc(repo.subcategory) + '</span>' : '') +
                     (repo.is_archived ? '<span class="av-badge av-badge--archived">Archived</span>' : '') +
                 '</div>' +
@@ -393,7 +541,6 @@
                 '<a href="' + escAttr(repo.url) + '" target="_blank" rel="noopener">' + esc(repo.full_name) + '</a>' +
             '</td>' +
             '<td class="av-table-desc" title="' + escAttr(repo.description) + '">' + esc(repo.description) + '</td>' +
-            '<td>' + esc(categoryName(repo.category)) + '</td>' +
             '<td>' + esc(repo.subcategory || "-") + '</td>' +
             '<td>' + formatNum(repo.stars) + '</td>' +
             '<td>' + formatNum(repo.forks) + '</td>' +
@@ -498,12 +645,6 @@
         });
 
         // Filters
-        els.filterCategory.addEventListener("change", function () {
-            state.category = this.value;
-            populateSubcategories();
-            applyAndRender();
-        });
-
         els.filterSubcategory.addEventListener("change", function () {
             state.subcategory = this.value;
             applyAndRender();
@@ -528,7 +669,7 @@
             applyAndRender();
         });
 
-        // View toggle
+        // View toggle, back button, category card clicks
         document.addEventListener("click", function (e) {
             var btn = e.target.closest("[data-action]");
             if (!btn) return;
@@ -543,6 +684,23 @@
                 state.view = "table";
                 render();
                 saveToHash();
+            } else if (action === "open-category") {
+                var catId = btn.getAttribute("data-category-id");
+                if (catId) showDetail(catId);
+            } else if (action === "back-overview") {
+                showOverview();
+            }
+        });
+
+        // Keyboard support for category cards
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") {
+                var card = e.target.closest("[data-action='open-category']");
+                if (card) {
+                    e.preventDefault();
+                    var catId = card.getAttribute("data-category-id");
+                    if (catId) showDetail(catId);
+                }
             }
         });
 
@@ -558,32 +716,49 @@
 
         // Hash changes (back/forward)
         window.addEventListener("hashchange", function () {
+            if (!allData) return;
+            var prevScreen = state.screen;
+            var prevCat = state.category;
             restoreFromHash();
-            applyAndRender();
+            if (state.screen === "detail" && state.category !== "all") {
+                if (prevScreen !== "detail" || prevCat !== state.category) {
+                    showDetail(state.category, true);
+                } else {
+                    applyAndRender();
+                }
+            } else {
+                showOverview();
+            }
         });
     }
 
     // -------------------------------------------------------------- URL state
     function saveToHash() {
         var params = [];
-        if (state.query) params.push("q=" + encodeURIComponent(state.query));
-        if (state.category !== "all") params.push("cat=" + encodeURIComponent(state.category));
-        if (state.subcategory !== "all") params.push("sub=" + encodeURIComponent(state.subcategory));
-        if (state.language !== "all") params.push("lang=" + encodeURIComponent(state.language));
-        if (state.minHealth > 0) params.push("health=" + state.minHealth);
-        if (state.sortKey !== "stars" || state.sortDir !== "desc") params.push("sort=" + state.sortKey + "-" + state.sortDir);
-        if (state.view !== "grid") params.push("view=" + state.view);
-        if (state.page > 1) params.push("page=" + state.page);
+        if (state.screen === "detail" && state.category !== "all") {
+            params.push("cat=" + encodeURIComponent(state.category));
+            if (state.query) params.push("q=" + encodeURIComponent(state.query));
+            if (state.subcategory !== "all") params.push("sub=" + encodeURIComponent(state.subcategory));
+            if (state.language !== "all") params.push("lang=" + encodeURIComponent(state.language));
+            if (state.minHealth > 0) params.push("health=" + state.minHealth);
+            if (state.sortKey !== "stars" || state.sortDir !== "desc") params.push("sort=" + state.sortKey + "-" + state.sortDir);
+            if (state.view !== "grid") params.push("view=" + state.view);
+            if (state.page > 1) params.push("page=" + state.page);
+        }
 
         var hash = params.length ? "#" + params.join("&") : "";
         if (window.location.hash !== hash) {
-            history.replaceState(null, "", hash || window.location.pathname);
+            history.pushState(null, "", hash || window.location.pathname);
         }
     }
 
     function restoreFromHash() {
         var hash = window.location.hash.slice(1);
-        if (!hash) return;
+        if (!hash) {
+            state.screen = "overview";
+            state.category = "all";
+            return;
+        }
 
         var params = {};
         hash.split("&").forEach(function (pair) {
@@ -591,39 +766,24 @@
             if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
         });
 
-        if (params.q !== undefined) {
-            state.query = params.q;
-            els.searchInput.value = params.q;
-        }
         if (params.cat) {
+            state.screen = "detail";
             state.category = params.cat;
-            els.filterCategory.value = params.cat;
-            populateSubcategories();
+        } else {
+            state.screen = "overview";
+            state.category = "all";
         }
-        if (params.sub) {
-            state.subcategory = params.sub;
-            els.filterSubcategory.value = params.sub;
-        }
-        if (params.lang) {
-            state.language = params.lang;
-            els.filterLanguage.value = params.lang;
-        }
-        if (params.health) {
-            state.minHealth = parseInt(params.health, 10) || 0;
-            els.filterHealth.value = String(state.minHealth);
-        }
+        if (params.q !== undefined) state.query = params.q;
+        if (params.sub) state.subcategory = params.sub;
+        if (params.lang) state.language = params.lang;
+        if (params.health) state.minHealth = parseInt(params.health, 10) || 0;
         if (params.sort) {
             var lastDash = params.sort.lastIndexOf("-");
             state.sortKey = params.sort.substring(0, lastDash);
             state.sortDir = params.sort.substring(lastDash + 1) || "desc";
-            els.sortSelect.value = params.sort;
         }
-        if (params.view) {
-            state.view = params.view;
-        }
-        if (params.page) {
-            state.page = parseInt(params.page, 10) || 1;
-        }
+        if (params.view) state.view = params.view;
+        if (params.page) state.page = parseInt(params.page, 10) || 1;
     }
 
     // ------------------------------------------------------------ Utilities
@@ -673,19 +833,6 @@
         if (score >= 60) return "var(--av-info)";
         if (score >= 40) return "var(--av-warning)";
         return "var(--av-danger)";
-    }
-
-    var categoryMap = {};
-    function categoryName(id) {
-        if (!id) return "";
-        if (categoryMap[id]) return categoryMap[id];
-        // Build map from filter options on first call
-        var opts = els.filterCategory.options;
-        for (var i = 1; i < opts.length; i++) {
-            var text = opts[i].textContent.replace(/\s*\(\d+\)$/, "");
-            categoryMap[opts[i].value] = text;
-        }
-        return categoryMap[id] || id.replace(/-/g, " ");
     }
 
     // ----------------------------------------------------------------- Start
