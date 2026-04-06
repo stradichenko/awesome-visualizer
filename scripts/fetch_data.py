@@ -33,6 +33,8 @@ NINETY_DAYS_AGO = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
 MAX_SUBLISTS = 500
 REST_DELAY = 0.3
 GQL_DELAY = 0.5
+MAX_RETRIES = 3
+RETRY_DELAY = 2
 
 
 def get_token():
@@ -45,8 +47,8 @@ def get_token():
     return token
 
 
-def _request(url, token, method="GET", body=None, content_type=None):
-    """Make an authenticated HTTP request to GitHub."""
+def _request(url, token, method="GET", body=None, content_type=None, _retries=0):
+    """Make an authenticated HTTP request to GitHub with retry logic."""
     req = Request(url, method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("User-Agent", "awesome-visualizer/1.0")
@@ -62,10 +64,23 @@ def _request(url, token, method="GET", body=None, content_type=None):
             wait = max(reset - int(time.time()), 30)
             print(f"  Rate limited. Waiting {wait}s ...", file=sys.stderr)
             time.sleep(wait)
-            return _request(url, token, method, body, content_type)
+            return _request(url, token, method, body, content_type, _retries)
         if e.code == 404:
             return None
+        if e.code in (500, 502, 503) and _retries < MAX_RETRIES:
+            delay = RETRY_DELAY * (2 ** _retries)
+            print(f"  HTTP {e.code} - retrying in {delay}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
+            time.sleep(delay)
+            return _request(url, token, method, body, content_type, _retries + 1)
         print(f"  HTTP {e.code} for {url}", file=sys.stderr)
+        return None
+    except (TimeoutError, OSError) as e:
+        if _retries < MAX_RETRIES:
+            delay = RETRY_DELAY * (2 ** _retries)
+            print(f"  Network error: {e} - retrying in {delay}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
+            time.sleep(delay)
+            return _request(url, token, method, body, content_type, _retries + 1)
+        print(f"  Network error for {url}: {e}", file=sys.stderr)
         return None
 
 

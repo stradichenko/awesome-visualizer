@@ -20,6 +20,12 @@
     display: flex;
     align-items: center;
     gap: var(--av-size-xs);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
 }
 
 .av-navbar-logo {
@@ -244,6 +250,11 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: var(--av-size-md);
+}
+
+.av-grid[hidden],
+.av-table-wrap[hidden] {
+    display: none;
 }
 
 /* -- Card -- */
@@ -640,7 +651,7 @@
 
 /* -- Detail screen -- */
 .av-detail-header {
-    margin-bottom: var(--av-size-md);
+    margin-bottom: var(--av-size-sm);
 }
 
 .av-btn--ghost {
