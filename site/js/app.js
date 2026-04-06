@@ -11,6 +11,7 @@
         filtered: [],
         query: "",
         category: "all",
+        subcategory: "all",
         language: "all",
         minHealth: 0,
         sortKey: "stars",
@@ -72,6 +73,7 @@
         }
         els.searchInput = document.getElementById("search-input");
         els.filterCategory = document.getElementById("filter-category");
+        els.filterSubcategory = document.getElementById("filter-subcategory");
         els.filterLanguage = document.getElementById("filter-language");
         els.filterHealth = document.getElementById("filter-health");
         els.sortSelect = document.getElementById("sort-select");
@@ -106,6 +108,8 @@
     }
 
     // --------------------------------------------------- Populate filter menus
+    var allSubcategories = [];
+
     function populateFilters(data) {
         var cats = data.categories || [];
         for (var i = 0; i < cats.length; i++) {
@@ -115,12 +119,42 @@
             els.filterCategory.appendChild(opt);
         }
 
+        allSubcategories = data.subcategories || [];
+        populateSubcategories();
+
         var langs = data.languages || [];
         for (var j = 0; j < langs.length; j++) {
             var lo = document.createElement("option");
             lo.value = langs[j].name;
             lo.textContent = langs[j].name + " (" + langs[j].count + ")";
             els.filterLanguage.appendChild(lo);
+        }
+    }
+
+    function populateSubcategories() {
+        var sel = els.filterSubcategory;
+        var prevVal = state.subcategory;
+        while (sel.options.length > 1) sel.remove(1);
+
+        var filtered = allSubcategories;
+        if (state.category !== "all") {
+            filtered = allSubcategories.filter(function (s) {
+                return s.category === state.category;
+            });
+        }
+
+        for (var i = 0; i < filtered.length; i++) {
+            var opt = document.createElement("option");
+            opt.value = filtered[i].id;
+            opt.textContent = filtered[i].name + " (" + filtered[i].count + ")";
+            sel.appendChild(opt);
+        }
+
+        // Restore previous selection if still valid
+        sel.value = prevVal;
+        if (sel.value !== prevVal) {
+            state.subcategory = "all";
+            sel.value = "all";
         }
     }
 
@@ -160,7 +194,8 @@
                 (r.topics || []).join(" ") + " " +
                 (r.language || "") + " " +
                 (r.owner || "") + " " +
-                (r.category || "")
+                (r.category || "") + " " +
+                (r.subcategory || "")
             ).toLowerCase();
         }
     }
@@ -219,6 +254,7 @@
         for (var i = 0; i < repos.length; i++) {
             var r = repos[i];
             if (state.category !== "all" && r.category !== state.category) continue;
+            if (state.subcategory !== "all" && (r.subcategory_id || "") !== state.subcategory) continue;
             if (state.language !== "all" && r.language !== state.language) continue;
             if ((r.health || 0) < state.minHealth) continue;
             out.push(r);
@@ -320,6 +356,7 @@
                 '<div class="av-card-meta">' +
                     '<span class="av-card-time">' + relativeTime(repo.last_push) + '</span>' +
                     '<span class="av-badge">' + esc(categoryName(repo.category)) + '</span>' +
+                    (repo.subcategory && repo.subcategory !== 'General' ? '<span class="av-badge av-badge--sub">' + esc(repo.subcategory) + '</span>' : '') +
                     (repo.is_archived ? '<span class="av-badge av-badge--archived">Archived</span>' : '') +
                 '</div>' +
             '</footer>';
@@ -356,6 +393,8 @@
                 '<a href="' + escAttr(repo.url) + '" target="_blank" rel="noopener">' + esc(repo.full_name) + '</a>' +
             '</td>' +
             '<td class="av-table-desc" title="' + escAttr(repo.description) + '">' + esc(repo.description) + '</td>' +
+            '<td>' + esc(categoryName(repo.category)) + '</td>' +
+            '<td>' + esc(repo.subcategory || "-") + '</td>' +
             '<td>' + formatNum(repo.stars) + '</td>' +
             '<td>' + formatNum(repo.forks) + '</td>' +
             '<td>' + formatNum(repo.open_issues) + '</td>' +
@@ -461,6 +500,12 @@
         // Filters
         els.filterCategory.addEventListener("change", function () {
             state.category = this.value;
+            populateSubcategories();
+            applyAndRender();
+        });
+
+        els.filterSubcategory.addEventListener("change", function () {
+            state.subcategory = this.value;
             applyAndRender();
         });
 
@@ -523,6 +568,7 @@
         var params = [];
         if (state.query) params.push("q=" + encodeURIComponent(state.query));
         if (state.category !== "all") params.push("cat=" + encodeURIComponent(state.category));
+        if (state.subcategory !== "all") params.push("sub=" + encodeURIComponent(state.subcategory));
         if (state.language !== "all") params.push("lang=" + encodeURIComponent(state.language));
         if (state.minHealth > 0) params.push("health=" + state.minHealth);
         if (state.sortKey !== "stars" || state.sortDir !== "desc") params.push("sort=" + state.sortKey + "-" + state.sortDir);
@@ -552,6 +598,11 @@
         if (params.cat) {
             state.category = params.cat;
             els.filterCategory.value = params.cat;
+            populateSubcategories();
+        }
+        if (params.sub) {
+            state.subcategory = params.sub;
+            els.filterSubcategory.value = params.sub;
         }
         if (params.lang) {
             state.language = params.lang;

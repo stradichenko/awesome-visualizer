@@ -402,6 +402,11 @@
     color: var(--av-danger);
 }
 
+.av-badge--sub {
+    background: var(--av-surface-2);
+    color: var(--av-text-secondary);
+}
+
 /* -- Table -- */
 .av-table-wrap {
     overflow-x: auto;

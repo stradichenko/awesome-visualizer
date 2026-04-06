@@ -160,18 +160,41 @@ def parse_master_readme(readme_text):
 
 
 def parse_sublist_readme(readme_text, category_name, category_id, source_repo):
-    """Extract individual project repos from a sub-list's README."""
-    links = extract_github_repo_links(readme_text)
-    return [
-        {
-            "full_name": link["full_name"],
-            "link_name": link["link_name"],
-            "category": category_id,
-            "category_name": category_name,
-        }
-        for link in links
-        if link["full_name"].lower() != source_repo.lower()
-    ]
+    """Extract individual project repos from a sub-list's README with subcategory headings."""
+    repos = []
+    current_sub = "General"
+    skip_sections = {"contents", "license", "contributing", "footnotes", "related", "about", "meta"}
+    source_lower = source_repo.lower()
+
+    for line in readme_text.split("\n"):
+        # Detect ##, ###, or #### section headings as subcategories
+        heading = re.match(r"^#{2,4}\s+(.+)", line)
+        if heading:
+            text = heading.group(1).strip()
+            # Strip trailing anchors and markdown links
+            text = re.sub(r"\s*<.*$", "", text)
+            text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+            text = text.strip(" #")
+            if text and text.lower() not in skip_sections:
+                current_sub = text
+            continue
+
+        for name, repo_path in re.findall(
+            r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
+            line,
+        ):
+            clean = repo_path.strip("/")
+            if clean.count("/") == 1 and clean.lower() != source_lower:
+                repos.append({
+                    "full_name": clean,
+                    "link_name": name,
+                    "category": category_id,
+                    "category_name": category_name,
+                    "subcategory": current_sub,
+                    "subcategory_id": slugify(current_sub),
+                })
+
+    return repos
 
 
 def build_graphql_query(batch):
@@ -305,6 +328,8 @@ def process_batch_result(data, batch_info):
             "commits_90d": commits_90d,
             "topics": topics,
             "category": info["category"],
+            "subcategory": info.get("subcategory", "General"),
+            "subcategory_id": info.get("subcategory_id", "general"),
         }
         rec["health"] = compute_health(rec)
         repos.append(rec)
@@ -378,7 +403,7 @@ def main():
         if batch_num < total_batches - 1:
             time.sleep(GQL_DELAY)
 
-    # Step 6: Build category and language summaries
+    # Step 6: Build category, subcategory, and language summaries
     cat_counts = {}
     for r in all_repos:
         c = r["category"]
@@ -389,6 +414,21 @@ def main():
         name = cat_names.get(cid, cid.replace("-", " ").title())
         categories.append({"id": cid, "name": name, "count": count})
     categories.sort(key=lambda c: c["name"])
+
+    # Build subcategory summary grouped by category
+    sub_counts = {}
+    for r in all_repos:
+        key = (r["category"], r.get("subcategory_id", "general"))
+        if key not in sub_counts:
+            sub_counts[key] = {
+                "id": r.get("subcategory_id", "general"),
+                "name": r.get("subcategory", "General"),
+                "category": r["category"],
+                "count": 0,
+            }
+        sub_counts[key]["count"] += 1
+
+    subcategories = sorted(sub_counts.values(), key=lambda s: (s["category"], s["name"]))
 
     lang_counts = {}
     for r in all_repos:
@@ -408,6 +448,7 @@ def main():
             "source": f"https://github.com/{MASTER_LIST}",
         },
         "categories": categories,
+        "subcategories": subcategories,
         "languages": languages,
         "repos": sorted(all_repos, key=lambda r: -r["stars"]),
     }

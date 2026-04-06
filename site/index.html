@@ -92,6 +92,11 @@
                     <option value="all">All Categories</option>
                 </select>
 
+                <label for="filter-subcategory" class="av-sr-only">Filter by subcategory</label>
+                <select id="filter-subcategory" class="av-select" data-action="filter-subcategory">
+                    <option value="all">All Subcategories</option>
+                </select>
+
                 <label for="filter-language" class="av-sr-only">Filter by language</label>
                 <select id="filter-language" class="av-select" data-action="filter-language">
                     <option value="all">All Languages</option>
@@ -149,6 +154,8 @@
                     <tr>
                         <th scope="col">Repository</th>
                         <th scope="col">Description</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Subcategory</th>
                         <th scope="col">Stars</th>
                         <th scope="col">Forks</th>
                         <th scope="col">Issues</th>

@@ -5,26 +5,90 @@
     "source": "https://github.com/sindresorhus/awesome"
   },
   "categories": [
-    {"id": "cli-apps", "name": "CLI Apps", "count": 4},
-    {"id": "devops", "name": "DevOps", "count": 4},
-    {"id": "go", "name": "Go", "count": 5},
-    {"id": "javascript", "name": "JavaScript", "count": 4},
-    {"id": "machine-learning", "name": "Machine Learning", "count": 5},
-    {"id": "nodejs", "name": "Node.js", "count": 5},
-    {"id": "python", "name": "Python", "count": 6},
-    {"id": "react", "name": "React", "count": 5},
-    {"id": "rust", "name": "Rust", "count": 4},
-    {"id": "vue", "name": "Vue", "count": 6}
+    {
+      "id": "cli-apps",
+      "name": "CLI Apps",
+      "count": 4
+    },
+    {
+      "id": "devops",
+      "name": "DevOps",
+      "count": 4
+    },
+    {
+      "id": "go",
+      "name": "Go",
+      "count": 5
+    },
+    {
+      "id": "javascript",
+      "name": "JavaScript",
+      "count": 4
+    },
+    {
+      "id": "machine-learning",
+      "name": "Machine Learning",
+      "count": 5
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js",
+      "count": 5
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "count": 6
+    },
+    {
+      "id": "react",
+      "name": "React",
+      "count": 5
+    },
+    {
+      "id": "rust",
+      "name": "Rust",
+      "count": 4
+    },
+    {
+      "id": "vue",
+      "name": "Vue",
+      "count": 6
+    }
   ],
   "languages": [
-    {"name": "JavaScript", "count": 10},
-    {"name": "TypeScript", "count": 10},
-    {"name": "Python", "count": 10},
-    {"name": "Go", "count": 7},
-    {"name": "Rust", "count": 6},
-    {"name": "C++", "count": 3},
-    {"name": "Ruby", "count": 1},
-    {"name": "C", "count": 1}
+    {
+      "name": "JavaScript",
+      "count": 10
+    },
+    {
+      "name": "TypeScript",
+      "count": 10
+    },
+    {
+      "name": "Python",
+      "count": 10
+    },
+    {
+      "name": "Go",
+      "count": 7
+    },
+    {
+      "name": "Rust",
+      "count": 6
+    },
+    {
+      "name": "C++",
+      "count": 3
+    },
+    {
+      "name": "Ruby",
+      "count": 1
+    },
+    {
+      "name": "C",
+      "count": 1
+    }
   ],
   "repos": [
     {
@@ -43,9 +107,16 @@
       "last_push": "2026-04-04T18:30:00Z",
       "is_archived": false,
       "commits_90d": 350,
-      "topics": ["nextjs", "react", "framework", "ssr"],
+      "topics": [
+        "nextjs",
+        "react",
+        "framework",
+        "ssr"
+      ],
       "category": "react",
-      "health": 100
+      "health": 100,
+      "subcategory": "Frameworks",
+      "subcategory_id": "frameworks"
     },
     {
       "full_name": "d3/d3",
@@ -63,9 +134,15 @@
       "last_push": "2026-02-10T09:00:00Z",
       "is_archived": false,
       "commits_90d": 8,
-      "topics": ["d3", "visualization", "svg"],
+      "topics": [
+        "d3",
+        "visualization",
+        "svg"
+      ],
       "category": "javascript",
-      "health": 73
+      "health": 73,
+      "subcategory": "Data Visualization",
+      "subcategory_id": "data-visualization"
     },
     {
       "full_name": "axios/axios",
@@ -83,9 +160,16 @@
       "last_push": "2026-03-20T14:00:00Z",
       "is_archived": false,
       "commits_90d": 15,
-      "topics": ["http", "ajax", "promise", "node"],
+      "topics": [
+        "http",
+        "ajax",
+        "promise",
+        "node"
+      ],
       "category": "javascript",
-      "health": 83
+      "health": 83,
+      "subcategory": "HTTP",
+      "subcategory_id": "http"
     },
     {
       "full_name": "mui/material-ui",
@@ -103,9 +187,16 @@
       "last_push": "2026-04-03T22:15:00Z",
       "is_archived": false,
       "commits_90d": 180,
-      "topics": ["react", "material-design", "ui", "components"],
+      "topics": [
+        "react",
+        "material-design",
+        "ui",
+        "components"
+      ],
       "category": "react",
-      "health": 100
+      "health": 100,
+      "subcategory": "UI Components",
+      "subcategory_id": "ui-components"
     },
     {
       "full_name": "ant-design/ant-design",
@@ -123,9 +214,16 @@
       "last_push": "2026-04-05T10:00:00Z",
       "is_archived": false,
       "commits_90d": 220,
-      "topics": ["react", "ui", "design-system", "antd"],
+      "topics": [
+        "react",
+        "ui",
+        "design-system",
+        "antd"
+      ],
       "category": "react",
-      "health": 100
+      "health": 100,
+      "subcategory": "UI Components",
+      "subcategory_id": "ui-components"
     },
     {
       "full_name": "pytorch/pytorch",
@@ -143,9 +241,16 @@
       "last_push": "2026-04-06T01:00:00Z",
       "is_archived": false,
       "commits_90d": 2800,
-      "topics": ["pytorch", "deep-learning", "machine-learning", "python"],
+      "topics": [
+        "pytorch",
+        "deep-learning",
+        "machine-learning",
+        "python"
+      ],
       "category": "machine-learning",
-      "health": 100
+      "health": 100,
+      "subcategory": "Deep Learning",
+      "subcategory_id": "deep-learning"
     },
     {
       "full_name": "django/django",
@@ -163,9 +268,15 @@
       "last_push": "2026-04-04T09:30:00Z",
       "is_archived": false,
       "commits_90d": 280,
-      "topics": ["django", "python", "web-framework"],
+      "topics": [
+        "django",
+        "python",
+        "web-framework"
+      ],
       "category": "python",
-      "health": 100
+      "health": 100,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "gin-gonic/gin",
@@ -183,9 +294,16 @@
       "last_push": "2026-03-28T16:00:00Z",
       "is_archived": false,
       "commits_90d": 25,
-      "topics": ["go", "gin", "http", "web-framework"],
+      "topics": [
+        "go",
+        "gin",
+        "http",
+        "web-framework"
+      ],
       "category": "go",
-      "health": 90
+      "health": 90,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "fastapi/fastapi",
@@ -203,9 +321,16 @@
       "last_push": "2026-04-05T20:00:00Z",
       "is_archived": false,
       "commits_90d": 65,
-      "topics": ["fastapi", "python", "api", "async"],
+      "topics": [
+        "fastapi",
+        "python",
+        "api",
+        "async"
+      ],
       "category": "python",
-      "health": 100
+      "health": 100,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "gohugoio/hugo",
@@ -223,9 +348,15 @@
       "last_push": "2026-04-02T11:00:00Z",
       "is_archived": false,
       "commits_90d": 85,
-      "topics": ["hugo", "static-site-generator", "go"],
+      "topics": [
+        "hugo",
+        "static-site-generator",
+        "go"
+      ],
       "category": "go",
-      "health": 95
+      "health": 95,
+      "subcategory": "Static Site Generators",
+      "subcategory_id": "static-site-generators"
     },
     {
       "full_name": "ElemeFE/element",
@@ -243,9 +374,16 @@
       "last_push": "2024-06-15T10:00:00Z",
       "is_archived": false,
       "commits_90d": 0,
-      "topics": ["vue", "ui", "components", "element-ui"],
+      "topics": [
+        "vue",
+        "ui",
+        "components",
+        "element-ui"
+      ],
       "category": "vue",
-      "health": 42
+      "health": 42,
+      "subcategory": "UI Components",
+      "subcategory_id": "ui-components"
     },
     {
       "full_name": "pallets/flask",
@@ -263,9 +401,16 @@
       "last_push": "2026-03-15T08:00:00Z",
       "is_archived": false,
       "commits_90d": 30,
-      "topics": ["flask", "python", "web", "wsgi"],
+      "topics": [
+        "flask",
+        "python",
+        "web",
+        "wsgi"
+      ],
       "category": "python",
-      "health": 90
+      "health": 90,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "nestjs/nest",
@@ -283,9 +428,16 @@
       "last_push": "2026-04-05T22:00:00Z",
       "is_archived": false,
       "commits_90d": 60,
-      "topics": ["nestjs", "nodejs", "typescript", "graphql"],
+      "topics": [
+        "nestjs",
+        "nodejs",
+        "typescript",
+        "graphql"
+      ],
       "category": "nodejs",
-      "health": 100
+      "health": 100,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "expressjs/express",
@@ -303,9 +455,15 @@
       "last_push": "2026-03-30T14:00:00Z",
       "is_archived": false,
       "commits_90d": 22,
-      "topics": ["express", "nodejs", "web-framework"],
+      "topics": [
+        "express",
+        "nodejs",
+        "web-framework"
+      ],
       "category": "javascript",
-      "health": 90
+      "health": 90,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "grafana/grafana",
@@ -323,9 +481,16 @@
       "last_push": "2026-04-06T00:30:00Z",
       "is_archived": false,
       "commits_90d": 1200,
-      "topics": ["grafana", "monitoring", "observability", "dashboards"],
+      "topics": [
+        "grafana",
+        "monitoring",
+        "observability",
+        "dashboards"
+      ],
       "category": "devops",
-      "health": 100
+      "health": 100,
+      "subcategory": "Monitoring",
+      "subcategory_id": "monitoring"
     },
     {
       "full_name": "ansible/ansible",
@@ -343,9 +508,16 @@
       "last_push": "2026-04-05T17:00:00Z",
       "is_archived": false,
       "commits_90d": 450,
-      "topics": ["ansible", "automation", "devops", "configuration-management"],
+      "topics": [
+        "ansible",
+        "automation",
+        "devops",
+        "configuration-management"
+      ],
       "category": "devops",
-      "health": 100
+      "health": 100,
+      "subcategory": "Configuration Management",
+      "subcategory_id": "configuration-management"
     },
     {
       "full_name": "scikit-learn/scikit-learn",
@@ -363,9 +535,16 @@
       "last_push": "2026-04-04T16:00:00Z",
       "is_archived": false,
       "commits_90d": 280,
-      "topics": ["scikit-learn", "machine-learning", "python", "data-science"],
+      "topics": [
+        "scikit-learn",
+        "machine-learning",
+        "python",
+        "data-science"
+      ],
       "category": "machine-learning",
-      "health": 100
+      "health": 100,
+      "subcategory": "General ML",
+      "subcategory_id": "general-ml"
     },
     {
       "full_name": "lodash/lodash",
@@ -383,9 +562,15 @@
       "last_push": "2025-08-10T12:00:00Z",
       "is_archived": false,
       "commits_90d": 0,
-      "topics": ["lodash", "javascript", "utility"],
+      "topics": [
+        "lodash",
+        "javascript",
+        "utility"
+      ],
       "category": "javascript",
-      "health": 47
+      "health": 47,
+      "subcategory": "Utilities",
+      "subcategory_id": "utilities"
     },
     {
       "full_name": "socketio/socket.io",
@@ -403,9 +588,16 @@
       "last_push": "2026-03-01T09:00:00Z",
       "is_archived": false,
       "commits_90d": 12,
-      "topics": ["socket-io", "websocket", "realtime", "nodejs"],
+      "topics": [
+        "socket-io",
+        "websocket",
+        "realtime",
+        "nodejs"
+      ],
       "category": "nodejs",
-      "health": 83
+      "health": 83,
+      "subcategory": "Realtime",
+      "subcategory_id": "realtime"
     },
     {
       "full_name": "prometheus/prometheus",
@@ -423,9 +615,16 @@
       "last_push": "2026-04-05T19:00:00Z",
       "is_archived": false,
       "commits_90d": 220,
-      "topics": ["prometheus", "monitoring", "metrics", "time-series"],
+      "topics": [
+        "prometheus",
+        "monitoring",
+        "metrics",
+        "time-series"
+      ],
       "category": "go",
-      "health": 100
+      "health": 100,
+      "subcategory": "Monitoring",
+      "subcategory_id": "monitoring"
     },
     {
       "full_name": "nuxt/nuxt",
@@ -443,9 +642,16 @@
       "last_push": "2026-04-05T23:30:00Z",
       "is_archived": false,
       "commits_90d": 180,
-      "topics": ["nuxt", "vue", "ssr", "framework"],
+      "topics": [
+        "nuxt",
+        "vue",
+        "ssr",
+        "framework"
+      ],
       "category": "vue",
-      "health": 100
+      "health": 100,
+      "subcategory": "Frameworks",
+      "subcategory_id": "frameworks"
     },
     {
       "full_name": "psf/requests",
@@ -463,9 +669,15 @@
       "last_push": "2026-02-20T10:00:00Z",
       "is_archived": false,
       "commits_90d": 10,
-      "topics": ["python", "http", "requests"],
+      "topics": [
+        "python",
+        "http",
+        "requests"
+      ],
       "category": "python",
-      "health": 78
+      "health": 78,
+      "subcategory": "HTTP",
+      "subcategory_id": "http"
     },
     {
       "full_name": "ReactTraining/react-router",
@@ -483,9 +695,15 @@
       "last_push": "2026-04-01T14:00:00Z",
       "is_archived": false,
       "commits_90d": 55,
-      "topics": ["react", "router", "spa"],
+      "topics": [
+        "react",
+        "router",
+        "spa"
+      ],
       "category": "react",
-      "health": 95
+      "health": 95,
+      "subcategory": "Routing",
+      "subcategory_id": "routing"
     },
     {
       "full_name": "scrapy/scrapy",
@@ -503,9 +721,16 @@
       "last_push": "2026-03-25T11:00:00Z",
       "is_archived": false,
       "commits_90d": 40,
-      "topics": ["scrapy", "python", "web-scraping", "crawler"],
+      "topics": [
+        "scrapy",
+        "python",
+        "web-scraping",
+        "crawler"
+      ],
       "category": "python",
-      "health": 90
+      "health": 90,
+      "subcategory": "Web Scraping",
+      "subcategory_id": "web-scraping"
     },
     {
       "full_name": "hashicorp/terraform",
@@ -523,9 +748,15 @@
       "last_push": "2026-04-04T16:30:00Z",
       "is_archived": false,
       "commits_90d": 200,
-      "topics": ["terraform", "infrastructure-as-code", "cloud"],
+      "topics": [
+        "terraform",
+        "infrastructure-as-code",
+        "cloud"
+      ],
       "category": "devops",
-      "health": 95
+      "health": 95,
+      "subcategory": "Infrastructure",
+      "subcategory_id": "infrastructure"
     },
     {
       "full_name": "Automattic/mongoose",
@@ -543,9 +774,16 @@
       "last_push": "2026-04-03T20:00:00Z",
       "is_archived": false,
       "commits_90d": 85,
-      "topics": ["mongoose", "mongodb", "nodejs", "odm"],
+      "topics": [
+        "mongoose",
+        "mongodb",
+        "nodejs",
+        "odm"
+      ],
       "category": "nodejs",
-      "health": 95
+      "health": 95,
+      "subcategory": "Database",
+      "subcategory_id": "database"
     },
     {
       "full_name": "fastify/fastify",
@@ -563,9 +801,16 @@
       "last_push": "2026-04-02T15:00:00Z",
       "is_archived": false,
       "commits_90d": 50,
-      "topics": ["nodejs", "http", "web-framework", "fastify"],
+      "topics": [
+        "nodejs",
+        "http",
+        "web-framework",
+        "fastify"
+      ],
       "category": "nodejs",
-      "health": 95
+      "health": 95,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "tokio-rs/tokio",
@@ -583,9 +828,16 @@
       "last_push": "2026-04-04T21:00:00Z",
       "is_archived": false,
       "commits_90d": 90,
-      "topics": ["tokio", "rust", "async", "runtime"],
+      "topics": [
+        "tokio",
+        "rust",
+        "async",
+        "runtime"
+      ],
       "category": "rust",
-      "health": 95
+      "health": 95,
+      "subcategory": "Async Runtime",
+      "subcategory_id": "async-runtime"
     },
     {
       "full_name": "labstack/echo",
@@ -603,9 +855,16 @@
       "last_push": "2026-03-20T12:00:00Z",
       "is_archived": false,
       "commits_90d": 18,
-      "topics": ["go", "echo", "web-framework", "http"],
+      "topics": [
+        "go",
+        "echo",
+        "web-framework",
+        "http"
+      ],
       "category": "go",
-      "health": 85
+      "health": 85,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "dmlc/xgboost",
@@ -623,9 +882,15 @@
       "last_push": "2026-04-03T08:00:00Z",
       "is_archived": false,
       "commits_90d": 70,
-      "topics": ["xgboost", "machine-learning", "gradient-boosting"],
+      "topics": [
+        "xgboost",
+        "machine-learning",
+        "gradient-boosting"
+      ],
       "category": "machine-learning",
-      "health": 95
+      "health": 95,
+      "subcategory": "Gradient Boosting",
+      "subcategory_id": "gradient-boosting"
     },
     {
       "full_name": "keras-team/keras",
@@ -643,9 +908,16 @@
       "last_push": "2026-04-05T14:00:00Z",
       "is_archived": false,
       "commits_90d": 120,
-      "topics": ["keras", "deep-learning", "neural-networks", "python"],
+      "topics": [
+        "keras",
+        "deep-learning",
+        "neural-networks",
+        "python"
+      ],
       "category": "machine-learning",
-      "health": 100
+      "health": 100,
+      "subcategory": "Deep Learning",
+      "subcategory_id": "deep-learning"
     },
     {
       "full_name": "microsoft/LightGBM",
@@ -663,9 +935,15 @@
       "last_push": "2026-03-28T10:00:00Z",
       "is_archived": false,
       "commits_90d": 45,
-      "topics": ["lightgbm", "machine-learning", "gradient-boosting"],
+      "topics": [
+        "lightgbm",
+        "machine-learning",
+        "gradient-boosting"
+      ],
       "category": "machine-learning",
-      "health": 90
+      "health": 90,
+      "subcategory": "Gradient Boosting",
+      "subcategory_id": "gradient-boosting"
     },
     {
       "full_name": "actix/actix-web",
@@ -683,9 +961,16 @@
       "last_push": "2026-03-30T16:00:00Z",
       "is_archived": false,
       "commits_90d": 30,
-      "topics": ["actix", "rust", "web-framework", "async"],
+      "topics": [
+        "actix",
+        "rust",
+        "web-framework",
+        "async"
+      ],
       "category": "rust",
-      "health": 90
+      "health": 90,
+      "subcategory": "Web Frameworks",
+      "subcategory_id": "web-frameworks"
     },
     {
       "full_name": "junegunn/fzf",
@@ -703,9 +988,16 @@
       "last_push": "2026-04-01T08:00:00Z",
       "is_archived": false,
       "commits_90d": 35,
-      "topics": ["fzf", "fuzzy-finder", "cli", "terminal"],
+      "topics": [
+        "fzf",
+        "fuzzy-finder",
+        "cli",
+        "terminal"
+      ],
       "category": "cli-apps",
-      "health": 90
+      "health": 90,
+      "subcategory": "Search",
+      "subcategory_id": "search"
     },
     {
       "full_name": "BurntSushi/ripgrep",
@@ -723,9 +1015,16 @@
       "last_push": "2026-03-10T19:00:00Z",
       "is_archived": false,
       "commits_90d": 15,
-      "topics": ["ripgrep", "regex", "search", "cli"],
+      "topics": [
+        "ripgrep",
+        "regex",
+        "search",
+        "cli"
+      ],
       "category": "cli-apps",
-      "health": 83
+      "health": 83,
+      "subcategory": "Search",
+      "subcategory_id": "search"
     },
     {
       "full_name": "sharkdp/bat",
@@ -743,9 +1042,16 @@
       "last_push": "2026-02-28T14:00:00Z",
       "is_archived": false,
       "commits_90d": 8,
-      "topics": ["bat", "cat", "cli", "syntax-highlighting"],
+      "topics": [
+        "bat",
+        "cat",
+        "cli",
+        "syntax-highlighting"
+      ],
       "category": "cli-apps",
-      "health": 73
+      "health": 73,
+      "subcategory": "File Viewers",
+      "subcategory_id": "file-viewers"
     },
     {
       "full_name": "jqlang/jq",
@@ -763,9 +1069,16 @@
       "last_push": "2026-03-18T09:00:00Z",
       "is_archived": false,
       "commits_90d": 12,
-      "topics": ["jq", "json", "cli", "command-line"],
+      "topics": [
+        "jq",
+        "json",
+        "cli",
+        "command-line"
+      ],
       "category": "cli-apps",
-      "health": 83
+      "health": 83,
+      "subcategory": "Data Processing",
+      "subcategory_id": "data-processing"
     },
     {
       "full_name": "serde-rs/serde",
@@ -783,9 +1096,15 @@
       "last_push": "2026-03-22T07:00:00Z",
       "is_archived": false,
       "commits_90d": 20,
-      "topics": ["serde", "rust", "serialization"],
+      "topics": [
+        "serde",
+        "rust",
+        "serialization"
+      ],
       "category": "rust",
-      "health": 83
+      "health": 83,
+      "subcategory": "Serialization",
+      "subcategory_id": "serialization"
     },
     {
       "full_name": "vuetifyjs/vuetify",
@@ -803,9 +1122,16 @@
       "last_push": "2026-04-04T18:00:00Z",
       "is_archived": false,
       "commits_90d": 130,
-      "topics": ["vuetify", "vue", "material-design", "ui"],
+      "topics": [
+        "vuetify",
+        "vue",
+        "material-design",
+        "ui"
+      ],
       "category": "vue",
-      "health": 100
+      "health": 100,
+      "subcategory": "UI Components",
+      "subcategory_id": "ui-components"
     },
     {
       "full_name": "vuejs/pinia",
@@ -823,9 +1149,16 @@
       "last_push": "2026-03-28T12:00:00Z",
       "is_archived": false,
       "commits_90d": 25,
-      "topics": ["pinia", "vue", "state-management", "typescript"],
+      "topics": [
+        "pinia",
+        "vue",
+        "state-management",
+        "typescript"
+      ],
       "category": "vue",
-      "health": 88
+      "health": 88,
+      "subcategory": "State Management",
+      "subcategory_id": "state-management"
     },
     {
       "full_name": "PrimeVue/primevue",
@@ -843,9 +1176,15 @@
       "last_push": "2026-04-05T09:00:00Z",
       "is_archived": false,
       "commits_90d": 90,
-      "topics": ["primevue", "vue", "ui-components"],
+      "topics": [
+        "primevue",
+        "vue",
+        "ui-components"
+      ],
       "category": "vue",
-      "health": 95
+      "health": 95,
+      "subcategory": "UI Components",
+      "subcategory_id": "ui-components"
     },
     {
       "full_name": "Unitech/pm2",
@@ -863,9 +1202,16 @@
       "last_push": "2025-12-15T10:00:00Z",
       "is_archived": false,
       "commits_90d": 2,
-      "topics": ["pm2", "nodejs", "process-manager", "production"],
+      "topics": [
+        "pm2",
+        "nodejs",
+        "process-manager",
+        "production"
+      ],
       "category": "nodejs",
-      "health": 57
+      "health": 57,
+      "subcategory": "Process Management",
+      "subcategory_id": "process-management"
     },
     {
       "full_name": "celery/celery",
@@ -883,9 +1229,16 @@
       "last_push": "2026-04-02T11:00:00Z",
       "is_archived": false,
       "commits_90d": 55,
-      "topics": ["celery", "task-queue", "python", "distributed"],
+      "topics": [
+        "celery",
+        "task-queue",
+        "python",
+        "distributed"
+      ],
       "category": "python",
-      "health": 95
+      "health": 95,
+      "subcategory": "Task Queues",
+      "subcategory_id": "task-queues"
     },
     {
       "full_name": "spf13/cobra",
@@ -903,9 +1256,16 @@
       "last_push": "2026-03-15T16:00:00Z",
       "is_archived": false,
       "commits_90d": 15,
-      "topics": ["cobra", "go", "cli", "command-line"],
+      "topics": [
+        "cobra",
+        "go",
+        "cli",
+        "command-line"
+      ],
       "category": "go",
-      "health": 83
+      "health": 83,
+      "subcategory": "CLI",
+      "subcategory_id": "cli"
     },
     {
       "full_name": "enso-org/enso",
@@ -923,9 +1283,15 @@
       "last_push": "2026-04-05T21:00:00Z",
       "is_archived": false,
       "commits_90d": 250,
-      "topics": ["enso", "visual-programming", "data-science"],
+      "topics": [
+        "enso",
+        "visual-programming",
+        "data-science"
+      ],
       "category": "rust",
-      "health": 88
+      "health": 88,
+      "subcategory": "Applications",
+      "subcategory_id": "applications"
     },
     {
       "full_name": "formkit/formkit",
@@ -943,9 +1309,15 @@
       "last_push": "2026-04-01T10:00:00Z",
       "is_archived": false,
       "commits_90d": 30,
-      "topics": ["vue", "forms", "validation"],
+      "topics": [
+        "vue",
+        "forms",
+        "validation"
+      ],
       "category": "vue",
-      "health": 80
+      "health": 80,
+      "subcategory": "Forms",
+      "subcategory_id": "forms"
     },
     {
       "full_name": "facebook/react-native",
@@ -963,9 +1335,16 @@
       "last_push": "2026-04-06T02:00:00Z",
       "is_archived": false,
       "commits_90d": 600,
-      "topics": ["react-native", "ios", "android", "mobile"],
+      "topics": [
+        "react-native",
+        "ios",
+        "android",
+        "mobile"
+      ],
       "category": "react",
-      "health": 100
+      "health": 100,
+      "subcategory": "React Native",
+      "subcategory_id": "react-native"
     },
     {
       "full_name": "hashicorp/vagrant",
@@ -983,9 +1362,245 @@
       "last_push": "2026-03-20T09:00:00Z",
       "is_archived": false,
       "commits_90d": 30,
-      "topics": ["vagrant", "virtualization", "devops"],
+      "topics": [
+        "vagrant",
+        "virtualization",
+        "devops"
+      ],
       "category": "devops",
-      "health": 85
+      "health": 85,
+      "subcategory": "Virtualization",
+      "subcategory_id": "virtualization"
+    }
+  ],
+  "subcategories": [
+    {
+      "id": "data-processing",
+      "name": "Data Processing",
+      "category": "cli-apps",
+      "count": 1
+    },
+    {
+      "id": "file-viewers",
+      "name": "File Viewers",
+      "category": "cli-apps",
+      "count": 1
+    },
+    {
+      "id": "search",
+      "name": "Search",
+      "category": "cli-apps",
+      "count": 2
+    },
+    {
+      "id": "configuration-management",
+      "name": "Configuration Management",
+      "category": "devops",
+      "count": 1
+    },
+    {
+      "id": "infrastructure",
+      "name": "Infrastructure",
+      "category": "devops",
+      "count": 1
+    },
+    {
+      "id": "monitoring",
+      "name": "Monitoring",
+      "category": "devops",
+      "count": 1
+    },
+    {
+      "id": "virtualization",
+      "name": "Virtualization",
+      "category": "devops",
+      "count": 1
+    },
+    {
+      "id": "cli",
+      "name": "CLI",
+      "category": "go",
+      "count": 1
+    },
+    {
+      "id": "monitoring",
+      "name": "Monitoring",
+      "category": "go",
+      "count": 1
+    },
+    {
+      "id": "static-site-generators",
+      "name": "Static Site Generators",
+      "category": "go",
+      "count": 1
+    },
+    {
+      "id": "web-frameworks",
+      "name": "Web Frameworks",
+      "category": "go",
+      "count": 2
+    },
+    {
+      "id": "data-visualization",
+      "name": "Data Visualization",
+      "category": "javascript",
+      "count": 1
+    },
+    {
+      "id": "http",
+      "name": "HTTP",
+      "category": "javascript",
+      "count": 1
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities",
+      "category": "javascript",
+      "count": 1
+    },
+    {
+      "id": "web-frameworks",
+      "name": "Web Frameworks",
+      "category": "javascript",
+      "count": 1
+    },
+    {
+      "id": "deep-learning",
+      "name": "Deep Learning",
+      "category": "machine-learning",
+      "count": 2
+    },
+    {
+      "id": "general-ml",
+      "name": "General ML",
+      "category": "machine-learning",
+      "count": 1
+    },
+    {
+      "id": "gradient-boosting",
+      "name": "Gradient Boosting",
+      "category": "machine-learning",
+      "count": 2
+    },
+    {
+      "id": "database",
+      "name": "Database",
+      "category": "nodejs",
+      "count": 1
+    },
+    {
+      "id": "process-management",
+      "name": "Process Management",
+      "category": "nodejs",
+      "count": 1
+    },
+    {
+      "id": "realtime",
+      "name": "Realtime",
+      "category": "nodejs",
+      "count": 1
+    },
+    {
+      "id": "web-frameworks",
+      "name": "Web Frameworks",
+      "category": "nodejs",
+      "count": 2
+    },
+    {
+      "id": "http",
+      "name": "HTTP",
+      "category": "python",
+      "count": 1
+    },
+    {
+      "id": "task-queues",
+      "name": "Task Queues",
+      "category": "python",
+      "count": 1
+    },
+    {
+      "id": "web-frameworks",
+      "name": "Web Frameworks",
+      "category": "python",
+      "count": 3
+    },
+    {
+      "id": "web-scraping",
+      "name": "Web Scraping",
+      "category": "python",
+      "count": 1
+    },
+    {
+      "id": "frameworks",
+      "name": "Frameworks",
+      "category": "react",
+      "count": 1
+    },
+    {
+      "id": "react-native",
+      "name": "React Native",
+      "category": "react",
+      "count": 1
+    },
+    {
+      "id": "routing",
+      "name": "Routing",
+      "category": "react",
+      "count": 1
+    },
+    {
+      "id": "ui-components",
+      "name": "UI Components",
+      "category": "react",
+      "count": 2
+    },
+    {
+      "id": "applications",
+      "name": "Applications",
+      "category": "rust",
+      "count": 1
+    },
+    {
+      "id": "async-runtime",
+      "name": "Async Runtime",
+      "category": "rust",
+      "count": 1
+    },
+    {
+      "id": "serialization",
+      "name": "Serialization",
+      "category": "rust",
+      "count": 1
+    },
+    {
+      "id": "web-frameworks",
+      "name": "Web Frameworks",
+      "category": "rust",
+      "count": 1
+    },
+    {
+      "id": "forms",
+      "name": "Forms",
+      "category": "vue",
+      "count": 1
+    },
+    {
+      "id": "frameworks",
+      "name": "Frameworks",
+      "category": "vue",
+      "count": 1
+    },
+    {
+      "id": "state-management",
+      "name": "State Management",
+      "category": "vue",
+      "count": 1
+    },
+    {
+      "id": "ui-components",
+      "name": "UI Components",
+      "category": "vue",
+      "count": 3
     }
   ]
 }
