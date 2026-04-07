@@ -61,6 +61,9 @@
         <symbol id="icon-chevron-down" viewBox="0 0 16 16">
             <path d="M12.78 5.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0z"/>
         </symbol>
+        <symbol id="icon-link" viewBox="0 0 16 16">
+            <path d="M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 .75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25zm-.025 5.475a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 1 1-2.83-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25z"/>
+        </symbol>
     </svg>
 
     <nav class="av-navbar" aria-label="Main navigation">
@@ -90,6 +93,10 @@
                 <div class="av-stat">
                     <span class="av-stat-number" data-ref="stat-categories">--</span>
                     <span class="av-stat-label">Categories</span>
+                </div>
+                <div class="av-stat">
+                    <span class="av-stat-number" data-ref="stat-resources">--</span>
+                    <span class="av-stat-label">Resources</span>
                 </div>
             </section>
 
@@ -130,7 +137,7 @@
             </section>
 
             <div class="av-overview-header">
-                <h2 class="av-overview-heading">Awesome Lists</h2>
+                <h2 class="av-overview-heading">Official Awesome Lists</h2>
                 <div class="av-overview-search">
                     <label for="overview-search-input" class="av-sr-only">Search all repositories</label>
                     <svg class="av-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
@@ -158,11 +165,17 @@
             </div>
             <div class="av-overview-search-info" data-ref="overview-search-info" aria-live="polite" hidden></div>
             <div class="av-grid" data-ref="overview-search-results" role="list" aria-label="Search results" hidden></div>
-            <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Awesome list categories"></div>
+            <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Official awesome list categories"></div>
 
-            <section class="av-noncanonical" data-ref="noncanonical-section" aria-label="Non-canonical awesome lists" hidden>
-                <h2 class="av-overview-heading av-overview-heading--nc">Non-Canonical Awesome Lists</h2>
-                <p class="av-noncanonical-desc">Community-curated awesome lists discovered outside the official ecosystem.</p>
+            <section class="av-tier-section" data-ref="unofficial-section" aria-label="Unofficial awesome lists" hidden>
+                <h2 class="av-overview-heading av-overview-heading--tier">Unofficial Awesome Lists</h2>
+                <p class="av-tier-desc">Lists with the awesome badge that are not linked from the official sindresorhus/awesome repository.</p>
+                <div class="av-overview-grid" data-ref="unofficial-grid" role="list" aria-label="Unofficial awesome list categories"></div>
+            </section>
+
+            <section class="av-tier-section" data-ref="noncanonical-section" aria-label="Non-canonical awesome lists" hidden>
+                <h2 class="av-overview-heading av-overview-heading--tier">Non-Canonical Awesome Lists</h2>
+                <p class="av-tier-desc">Community-curated lists discovered via search - no awesome badge.</p>
                 <div class="av-overview-grid" data-ref="noncanonical-grid" role="list" aria-label="Non-canonical awesome list categories"></div>
             </section>
         </section>
@@ -199,6 +212,10 @@
                 <div class="av-stat">
                     <span class="av-stat-number" data-ref="detail-stat-langs">--</span>
                     <span class="av-stat-label">Languages</span>
+                </div>
+                <div class="av-stat">
+                    <span class="av-stat-number" data-ref="detail-stat-resources">--</span>
+                    <span class="av-stat-label">Resources</span>
                 </div>
             </section>
 
@@ -311,6 +328,22 @@
         </div>
 
         <nav class="av-pagination" aria-label="Pagination" data-ref="pagination"></nav>
+
+        <section class="av-resources" data-ref="resources-section" aria-label="Resource links" hidden>
+            <div class="av-resources-header">
+                <h3 class="av-resources-heading">
+                    <svg class="av-icon" aria-hidden="true"><use href="#icon-link"/></svg>
+                    Resource Links
+                </h3>
+                <span class="av-resources-count" data-ref="resources-count"></span>
+            </div>
+            <p class="av-resources-desc">Articles, tutorials, papers, and other non-GitHub resources curated in this list.</p>
+            <label for="resource-filter-subcategory" class="av-sr-only">Filter resources by subcategory</label>
+            <select id="resource-filter-subcategory" class="av-select av-resources-filter" data-action="filter-resource-subcategory">
+                <option value="all">All Subcategories</option>
+            </select>
+            <div class="av-resources-grid" data-ref="resources-grid" role="list" aria-label="Resource links"></div>
+        </section>
         </section><!-- /av-detail -->
     </main>
 

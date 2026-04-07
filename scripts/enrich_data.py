@@ -139,6 +139,48 @@ def build_category_keywords(repos):
     return result
 
 
+def build_resource_tokens(resource):
+    """Extract weighted tokens from a resource record."""
+    weighted = []
+    weighted.extend((t, 3.0) for t in tokenize(resource.get("title", "")))
+    weighted.extend((t, 1.0) for t in tokenize(resource.get("description", "")))
+    weighted.extend((t, 1.0) for t in tokenize(resource.get("category", "").replace("-", " ")))
+    weighted.extend((t, 1.0) for t in tokenize(resource.get("subcategory", "")))
+    return weighted
+
+
+def compute_resource_keywords(resources):
+    """Compute TF-IDF keywords per resource."""
+    n = len(resources)
+    if n == 0:
+        return [], Counter()
+    resource_tf = []
+    doc_freq = Counter()
+
+    for res in resources:
+        weighted = build_resource_tokens(res)
+        tf = {}
+        for term, weight in weighted:
+            tf[term] = tf.get(term, 0) + weight
+        resource_tf.append(tf)
+        for term in tf:
+            doc_freq[term] += 1
+
+    idf = {}
+    for term, df in doc_freq.items():
+        idf[term] = math.log((n + 1) / (df + 1)) + 1
+
+    resource_keywords = []
+    for tf in resource_tf:
+        scores = {}
+        for term, raw_tf in tf.items():
+            scores[term] = raw_tf * idf.get(term, 1.0)
+        top = sorted(scores.items(), key=lambda x: -x[1])[:MAX_KEYWORDS_PER_REPO]
+        resource_keywords.append([t for t, _ in top])
+
+    return resource_keywords, doc_freq
+
+
 def main():
     if not REPO_DATA.exists():
         print(f"Error: {REPO_DATA} not found. Run fetch_data.py first.", file=sys.stderr)
@@ -149,11 +191,12 @@ def main():
         data = json.load(f)
 
     repos = data.get("repos", [])
+    resources = data.get("resources", [])
     if not repos:
         print("No repos found in data.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  {len(repos)} repos loaded")
+    print(f"  {len(repos)} repos, {len(resources)} resources loaded")
 
     # Compute TF-IDF keywords per repo
     print("Computing TF-IDF keywords...")
@@ -169,6 +212,21 @@ def main():
             enriched_count += 1
 
     print(f"  {enriched_count} repos enriched with keywords")
+
+    # Compute TF-IDF keywords per resource
+    if resources:
+        print("Computing resource keywords...")
+        res_keywords, res_doc_freq = compute_resource_keywords(resources)
+        res_enriched = 0
+        for i, res in enumerate(resources):
+            kw = res_keywords[i]
+            if kw:
+                res["kw"] = " ".join(kw)
+                res_enriched += 1
+        print(f"  {res_enriched} resources enriched with keywords")
+        # Merge resource doc_freq into main doc_freq for suggestions
+        for term, freq in res_doc_freq.items():
+            doc_freq[term] = doc_freq.get(term, 0) + freq
 
     # Write enriched repos.json back
     with open(REPO_DATA, "w") as f:

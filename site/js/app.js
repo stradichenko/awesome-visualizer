@@ -134,6 +134,7 @@
         els.overviewSearchInput = document.getElementById("overview-search-input");
         els.overviewFilterLanguage = document.getElementById("overview-filter-language");
         els.overviewFilterHealth = document.getElementById("overview-filter-health");
+        els.resourceFilterSubcategory = document.getElementById("resource-filter-subcategory");
     }
 
     // ------------------------------------------------------------------- Init
@@ -158,6 +159,7 @@
                 allData = data;
                 state.repos = data.repos || [];
                 buildCategoryMap(data.categories || []);
+                buildCategoryMap(data.unofficial_categories || []);
                 buildCategoryMap(data.non_canonical_categories || []);
                 updateGlobalStats(data);
                 restoreFromHash();
@@ -441,21 +443,22 @@
             frag.appendChild(createCategoryCard(filtered[i]));
         }
         grid.appendChild(frag);
+        renderUnofficial();
         renderNonCanonical();
     }
 
-    function renderNonCanonical() {
-        var ncCats = (allData && allData.non_canonical_categories) || [];
-        var section = els["noncanonical-section"];
-        var grid = els["noncanonical-grid"];
+    function renderTierSection(dataKey, sectionRef, gridRef) {
+        var cats = (allData && allData[dataKey]) || [];
+        var section = els[sectionRef];
+        var grid = els[gridRef];
         if (!section || !grid) return;
 
-        if (!ncCats.length) {
+        if (!cats.length) {
             section.hidden = true;
             return;
         }
 
-        var filtered = ncCats;
+        var filtered = cats;
         if (overviewState.language !== "all") {
             filtered = filtered.filter(function (cat) {
                 var topLangs = cat.top_languages || [];
@@ -481,11 +484,23 @@
         section.hidden = false;
     }
 
+    function renderUnofficial() {
+        renderTierSection("unofficial_categories", "unofficial-section", "unofficial-grid");
+    }
+
+    function renderNonCanonical() {
+        renderTierSection("non_canonical_categories", "noncanonical-section", "noncanonical-grid");
+    }
+
     // ----------------------------------------------------------- Global stats
     function updateGlobalStats(data) {
         var meta = data.meta || {};
         els["stat-total"].textContent = formatNum(meta.total_repos || state.repos.length);
-        els["stat-categories"].textContent = (data.categories || []).length;
+        els["stat-categories"].textContent =
+            (data.categories || []).length +
+            (data.unofficial_categories || []).length +
+            (data.non_canonical_categories || []).length;
+        els["stat-resources"].textContent = formatNum(meta.total_resources || (data.resources || []).length);
 
         var totalHealth = 0;
         var activeCount = 0;
@@ -547,6 +562,7 @@
             frag.appendChild(createCategoryCard(cats[i]));
         }
         grid.appendChild(frag);
+        renderUnofficial();
         renderNonCanonical();
     }
 
@@ -569,10 +585,17 @@
                 esc(topLangs[i].name) + '</span>';
         }
 
+        var resCount = getCategoryResources(cat.id).length;
+        var resHtml = resCount > 0 ?
+            '<span class="av-catcard-count av-catcard-count--res">' +
+                '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> ' +
+                resCount + ' resources</span>' : '';
+
         card.innerHTML =
             '<header class="av-catcard-header">' +
                 '<h3 class="av-catcard-title">' + esc(cat.name) + '</h3>' +
                 '<span class="av-catcard-count">' + cat.count + ' repos</span>' +
+                resHtml +
             '</header>' +
             (cat.source_repo ? '<p class="av-catcard-source">' + esc(cat.source_repo) + '</p>' : '') +
             '<div class="av-catcard-stats">' +
@@ -625,6 +648,10 @@
         els["detail-stat-subcats"].textContent = Object.keys(subIds).length;
         els["detail-stat-langs"].textContent = Object.keys(detailLangs).length;
 
+        // Count resources for this category
+        var catResources = getCategoryResources(catId);
+        els["detail-stat-resources"].textContent = catResources.length;
+
         // Populate filters scoped to this category
         populateFilters(catId);
 
@@ -645,6 +672,7 @@
 
         searchTokens = null;
         applyAndRender();
+        renderResources(catId);
 
         // Reset detail viz toggle to expanded and render charts
         var detailVizBtn = document.querySelector('[data-action="toggle-detail-viz"]');
@@ -1223,6 +1251,21 @@
             });
         }
 
+        // Resource subcategory filter
+        if (els.resourceFilterSubcategory) {
+            els.resourceFilterSubcategory.addEventListener("change", function () {
+                var sub = this.value;
+                var catId = state.category;
+                var resources = getCategoryResources(catId);
+                if (sub !== "all") {
+                    resources = resources.filter(function (r) { return r.subcategory === sub; });
+                }
+                renderResourceGrid(resources);
+                var countEl = els["resources-count"];
+                if (countEl) countEl.textContent = resources.length + " links";
+            });
+        }
+
         // Table header: sort by click
         els["repo-table-head"].addEventListener("click", function (e) {
             var th = e.target.closest("th[data-sort-key]");
@@ -1460,6 +1503,39 @@
     }
 
     // -------------------------------------------------------- Overview search
+    function searchResources(query) {
+        var resources = (allData && allData.resources) || [];
+        if (!query || !resources.length) return [];
+        var q = query.toLowerCase();
+        var orGroups = q.replace(/&/g, " ").split("|");
+        var matched = [];
+
+        for (var i = 0; i < resources.length; i++) {
+            var res = resources[i];
+            var haystack = ((res.title || "") + " " + (res.description || "") + " " +
+                (res.category || "") + " " + (res.subcategory || "") + " " +
+                (res.kw || "")).toLowerCase();
+
+            for (var g = 0; g < orGroups.length; g++) {
+                var terms = orGroups[g].trim().split(/\s+/).filter(Boolean);
+                if (!terms.length) continue;
+                var allMatch = true;
+                for (var t = 0; t < terms.length; t++) {
+                    var pattern = terms[t]
+                        .replace(/[.+?^${}()[\]\\]/g, "\\$&")
+                        .replace(/\*/g, ".*");
+                    try {
+                        if (!new RegExp(pattern).test(haystack)) { allMatch = false; break; }
+                    } catch (e) {
+                        if (haystack.indexOf(terms[t]) === -1) { allMatch = false; break; }
+                    }
+                }
+                if (allMatch) { matched.push(res); break; }
+            }
+        }
+        return matched;
+    }
+
     function performOverviewSearch(query) {
         if (!searchTokens) buildSearchIndex();
 
@@ -1474,24 +1550,38 @@
         // Show up to 60 results from all categories
         results = results.slice(0, 60);
 
+        // Also search resources
+        var resResults = searchResources(query).slice(0, 20);
+
         var grid = els["overview-search-results"];
         var info = els["overview-search-info"];
         grid.textContent = "";
 
-        if (results.length === 0) {
-            grid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No repositories found</div><p>Try a different search term</p></div>';
+        if (results.length === 0 && resResults.length === 0) {
+            grid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No results found</div><p>Try a different search term</p></div>';
         } else {
             var frag = document.createDocumentFragment();
             for (var i = 0; i < results.length; i++) {
                 frag.appendChild(createCard(results[i], true));
             }
+            if (resResults.length > 0) {
+                var resHeading = document.createElement("div");
+                resHeading.className = "av-search-section-label";
+                resHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> Resource Links (' + resResults.length + ')';
+                frag.appendChild(resHeading);
+                for (var j = 0; j < resResults.length; j++) {
+                    frag.appendChild(createResourceCard(resResults[j]));
+                }
+            }
             grid.appendChild(frag);
         }
 
-        info.textContent = results.length + " matching repositories";
+        var totalCount = results.length + resResults.length;
+        info.textContent = totalCount + " matching results" + (resResults.length ? " (" + results.length + " repos, " + resResults.length + " resources)" : "");
         info.hidden = false;
         grid.hidden = false;
         els["overview-grid"].hidden = true;
+        if (els["unofficial-section"]) els["unofficial-section"].hidden = true;
         if (els["noncanonical-section"]) els["noncanonical-section"].hidden = true;
     }
 
@@ -1500,7 +1590,94 @@
         els["overview-search-results"].textContent = "";
         els["overview-search-info"].hidden = true;
         els["overview-grid"].hidden = false;
+        renderUnofficial();
         renderNonCanonical();
+    }
+
+    // ----------------------------------------------------------- Resources
+    function getCategoryResources(catId) {
+        var resources = (allData && allData.resources) || [];
+        return resources.filter(function (r) { return r.category === catId; });
+    }
+
+    function renderResources(catId) {
+        var section = els["resources-section"];
+        var grid = els["resources-grid"];
+        var countEl = els["resources-count"];
+        if (!section || !grid) return;
+
+        var resources = getCategoryResources(catId);
+
+        if (!resources.length) {
+            section.hidden = true;
+            return;
+        }
+
+        section.hidden = false;
+        countEl.textContent = resources.length + " links";
+
+        // Populate subcategory filter for resources
+        var filterSel = els.resourceFilterSubcategory;
+        if (filterSel) {
+            while (filterSel.options.length > 1) filterSel.remove(1);
+            var subCounts = {};
+            for (var s = 0; s < resources.length; s++) {
+                var sub = resources[s].subcategory || "General";
+                subCounts[sub] = (subCounts[sub] || 0) + 1;
+            }
+            var subs = Object.keys(subCounts).sort();
+            for (var si = 0; si < subs.length; si++) {
+                var opt = document.createElement("option");
+                opt.value = subs[si];
+                opt.textContent = subs[si] + " (" + subCounts[subs[si]] + ")";
+                filterSel.appendChild(opt);
+            }
+            filterSel.value = "all";
+        }
+
+        renderResourceGrid(resources);
+    }
+
+    function renderResourceGrid(resources) {
+        var grid = els["resources-grid"];
+        grid.textContent = "";
+
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < resources.length; i++) {
+            frag.appendChild(createResourceCard(resources[i]));
+        }
+        grid.appendChild(frag);
+    }
+
+    function extractDomain(url) {
+        try {
+            var a = document.createElement("a");
+            a.href = url;
+            return a.hostname.replace(/^www\./, "");
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function createResourceCard(res) {
+        var card = document.createElement("article");
+        card.className = "av-resource-card";
+        card.setAttribute("role", "listitem");
+
+        var domain = extractDomain(res.url);
+
+        card.innerHTML =
+            '<div class="av-resource-card-header">' +
+                '<svg class="av-icon--sm av-resource-icon" aria-hidden="true"><use href="#icon-link"/></svg>' +
+                '<a href="' + escAttr(res.url) + '" class="av-resource-title" target="_blank" rel="noopener noreferrer">' + esc(res.title) + '</a>' +
+            '</div>' +
+            (res.description ? '<p class="av-resource-desc">' + esc(res.description) + '</p>' : '') +
+            '<footer class="av-resource-footer">' +
+                '<span class="av-resource-domain">' + esc(domain) + '</span>' +
+                (res.subcategory && res.subcategory !== "General" ? '<span class="av-badge av-badge--sub">' + esc(res.subcategory) + '</span>' : '') +
+            '</footer>';
+
+        return card;
     }
 
     // -------------------------------------------------------------- URL state

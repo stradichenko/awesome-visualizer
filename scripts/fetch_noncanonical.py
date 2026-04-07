@@ -25,6 +25,7 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -44,6 +45,28 @@ MIN_STARS = 50  # Skip very low-quality repos
 MIN_LINK_COUNT = 10  # README must have at least this many GitHub links
 MIN_HEALTH = 50  # Average health of linked repos must exceed this
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
+
+# Noise filters for resource link extraction
+NOISE_DOMAINS_RE = re.compile(
+    r"img\.shields\.io|awesome\.re|travis-ci\.|circleci\.com|"
+    r"badge\.fury\.io|coveralls\.io|codecov\.io|"
+    r"patreon\.com|buymeacoffee\.com|opencollective\.com|paypal\.com|"
+    r"twitter\.com|x\.com|linkedin\.com/in|facebook\.com|"
+    r"npmjs\.com/package|pypi\.org/project|crates\.io/crates",
+    re.IGNORECASE,
+)
+NOISE_PATHS_RE = re.compile(
+    r"\.(png|jpg|jpeg|gif|svg|ico)(\?|$)|"
+    r"github\.com/[^/]+/[^/]+/(issues|pulls|wiki|blob|tree|actions|releases|commit|compare)",
+    re.IGNORECASE,
+)
+GITHUB_REPO_RE = re.compile(
+    r"^https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/?$",
+    re.IGNORECASE,
+)
+LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+RESOURCE_DESC_RE = re.compile(r"^\s*[-*]\s+\[[^\]]+\]\([^)]+\)\s*[-:]?\s*(.*)")
 
 
 def get_token():
@@ -82,7 +105,7 @@ def _request(url, token, method="GET", body=None, content_type=None, _retries=0)
             return _request(url, token, method, body, content_type, _retries + 1)
         print(f"  HTTP {e.code} for {url}", file=sys.stderr)
         return None
-    except (TimeoutError, OSError) as e:
+    except (TimeoutError, OSError, HTTPException) as e:
         if _retries < MAX_RETRIES:
             delay = RETRY_DELAY * (2 ** _retries)
             print(f"  Network error: {e} - retrying in {delay}s ...", file=sys.stderr)
@@ -203,6 +226,73 @@ def parse_list_readme(readme_text, category_name, category_id, source_repo):
                 })
 
     return repos
+
+
+def is_noise_url(url):
+    """Return True if the URL is a badge, image, social link, or other noise."""
+    if not url or not url.startswith("http"):
+        return True
+    if NOISE_DOMAINS_RE.search(url):
+        return True
+    if NOISE_PATHS_RE.search(url):
+        return True
+    return False
+
+
+def extract_resource_links(readme_text, category_name, category_id, source_repo):
+    """Extract non-GitHub resource links from a list's README."""
+    resources = []
+    current_sub = "General"
+    skip_sections = {"contents", "license", "contributing", "footnotes",
+                     "related", "about", "meta", "table of contents"}
+    seen_urls = set()
+
+    for line in readme_text.split("\n"):
+        heading = re.match(r"^#{2,4}\s+(.+)", line)
+        if heading:
+            text = heading.group(1).strip()
+            text = re.sub(r"\s*<.*$", "", text)
+            text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+            text = text.strip(" #")
+            if text and text.lower() not in skip_sections:
+                current_sub = text
+            continue
+
+        if not LIST_ITEM_RE.match(line):
+            continue
+
+        for title, url in MARKDOWN_LINK_RE.findall(line):
+            url = url.strip()
+            if is_noise_url(url):
+                continue
+            if GITHUB_REPO_RE.match(url):
+                continue
+            url_lower = url.lower()
+            if url_lower in seen_urls:
+                continue
+            seen_urls.add(url_lower)
+
+            desc = ""
+            desc_match = RESOURCE_DESC_RE.match(line)
+            if desc_match:
+                desc = desc_match.group(1).strip()
+                desc = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", desc)
+                desc = desc.strip(" .-")
+            if len(desc) > 200:
+                desc = desc[:197] + "..."
+
+            resources.append({
+                "url": url,
+                "title": title.strip(),
+                "description": desc,
+                "category": category_id,
+                "category_name": category_name,
+                "subcategory": current_sub,
+                "subcategory_id": slugify(current_sub),
+                "source_repo": source_repo,
+            })
+
+    return resources
 
 
 def build_graphql_query(batch):
@@ -334,7 +424,7 @@ def process_batch_result(data, batch_info):
         }
         rec["health"] = compute_health(rec)
         rec["is_awesome_list"] = False
-        rec["is_non_canonical"] = True
+        rec["tier"] = info.get("tier", "non-canonical")
         repos.append(rec)
 
     return repos
@@ -418,13 +508,15 @@ def main():
     print(f"Canonical set: {len(exclude_set)} known repos/lists")
 
     # Step 1: Search GitHub for awesome-* repos
-    print("\nSearching GitHub for non-canonical awesome lists...")
+    print("\nSearching GitHub for awesome lists outside the official ecosystem...")
     candidates = search_awesome_repos(token, exclude_set)
     print(f"\n  {len(candidates)} candidate repos found")
 
     # Step 2: Validate candidates by checking their READMEs
+    # Split into unofficial (has awesome badge) and non-canonical (no badge)
     print("\nValidating candidates (checking READMEs)...")
-    validated = []
+    unofficial = []
+    noncanonical = []
     for i, cand in enumerate(candidates):
         tag = f"[{i + 1}/{len(candidates)}]"
         fn = cand["full_name"]
@@ -436,161 +528,209 @@ def main():
             time.sleep(REST_DELAY)
             continue
 
-        # Skip if it has the awesome badge (it should be canonical)
-        if AWESOME_BADGE_RE.search(readme):
-            print(" has badge (should be canonical)")
-            time.sleep(REST_DELAY)
-            continue
+        has_badge = bool(AWESOME_BADGE_RE.search(readme))
 
-        is_list, link_count = looks_like_curated_list(readme)
-        if not is_list:
-            print(f" not a list ({link_count} links)")
-            time.sleep(REST_DELAY)
-            continue
+        if has_badge:
+            # Unofficial - has badge but not in sindresorhus/awesome
+            links = extract_github_links(readme)
+            link_count = len(links)
+            headings = len(re.findall(r"^#{2,4}\s+", readme, re.MULTILINE))
+            if link_count < MIN_LINK_COUNT or headings < 2:
+                print(f" badge but too few links ({link_count})")
+                time.sleep(REST_DELAY)
+                continue
+            print(f" unofficial ({link_count} links, badge)", flush=True)
+            unofficial.append({
+                "full_name": fn,
+                "name": cand["name"],
+                "description": cand["description"],
+                "stars": cand["stars"],
+                "readme": readme,
+                "link_count": link_count,
+            })
+        else:
+            # Non-canonical - no badge
+            is_list, link_count = looks_like_curated_list(readme)
+            if not is_list:
+                print(f" not a list ({link_count} links)")
+                time.sleep(REST_DELAY)
+                continue
+            print(f" non-canonical ({link_count} links)", flush=True)
+            noncanonical.append({
+                "full_name": fn,
+                "name": cand["name"],
+                "description": cand["description"],
+                "stars": cand["stars"],
+                "readme": readme,
+                "link_count": link_count,
+            })
 
-        print(f" valid list ({link_count} links)", flush=True)
-        validated.append({
-            "full_name": fn,
-            "name": cand["name"],
-            "description": cand["description"],
-            "stars": cand["stars"],
-            "readme": readme,
-            "link_count": link_count,
-        })
         time.sleep(REST_DELAY)
 
-    print(f"\n  {len(validated)} validated non-canonical lists")
+    print(f"\n  {len(unofficial)} unofficial lists (have badge, not in official repo)")
+    print(f"  {len(noncanonical)} non-canonical lists (no badge)")
 
-    if not validated:
-        print("No non-canonical lists found. Exiting.")
+    if not unofficial and not noncanonical:
+        print("No lists found. Exiting.")
+        existing["unofficial_categories"] = []
         existing["non_canonical_categories"] = []
         with open(REPO_DATA, "w") as f:
             json.dump(existing, f, separators=(",", ":"))
         return
 
-    # Step 3: Crawl validated lists for project repos
-    print("\nCrawling non-canonical lists for repos...")
-    all_links = []
-    nc_cat_meta = {}
+    # Helper to crawl a list of validated entries and produce repos + resources
+    def crawl_lists(validated, tier_label):
+        links = []
+        resources = []
+        cat_meta = {}
+        for v in validated:
+            cid = slugify(v["name"])
+            cname = v["name"].replace("-", " ").replace("awesome ", "").replace("Awesome ", "").title()
+            if cid in cat_meta:
+                cid = slugify(v["full_name"].replace("/", "-"))
+            cat_meta[cid] = {
+                "name": cname,
+                "source_repo": v["full_name"],
+                "description": v["description"],
+                "stars": v["stars"],
+                "link_count": v["link_count"],
+            }
+            parsed = parse_list_readme(v["readme"], cname, cid, v["full_name"])
+            res = extract_resource_links(v["readme"], cname, cid, v["full_name"])
+            print(f"  {v['full_name']}: {len(parsed)} repos, {len(res)} resources -> {cname}")
+            links.extend(parsed)
+            resources.extend(res)
+        return links, resources, cat_meta
 
-    for v in validated:
-        cid = slugify(v["name"])
-        cname = v["name"].replace("-", " ").replace("awesome ", "").replace("Awesome ", "").title()
-        # Prefix with original name if slugify would collide
-        if cid in nc_cat_meta:
-            cid = slugify(v["full_name"].replace("/", "-"))
+    # Helper to batch-fetch via GraphQL and build category summaries
+    def fetch_and_summarize(all_links, cat_meta, tier_label, dedup_seed):
+        seen = set(dedup_seed)
+        unique = []
+        for link in all_links:
+            key = link["full_name"].lower()
+            if key not in seen:
+                seen.add(key)
+                link["tier"] = tier_label
+                unique.append(link)
+        print(f"\n  {len(unique)} unique {tier_label} project repos")
 
-        nc_cat_meta[cid] = {
-            "name": cname,
-            "source_repo": v["full_name"],
-            "description": v["description"],
-            "stars": v["stars"],
-            "link_count": v["link_count"],
-        }
+        if not unique:
+            return [], [], seen
 
-        links = parse_list_readme(v["readme"], cname, cid, v["full_name"])
-        print(f"  {v['full_name']}: {len(links)} repos -> {cname}")
-        all_links.extend(links)
+        print(f"\nFetching GitHub metrics for {tier_label} repos...")
+        fetched = []
+        total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
+        for bn in range(total_batches):
+            start = bn * BATCH_SIZE
+            batch = unique[start:start + BATCH_SIZE]
+            print(f"  Batch {bn + 1}/{total_batches} ({len(batch)} repos)...", flush=True)
+            query = build_graphql_query(batch)
+            data = github_graphql(query, token)
+            repos = process_batch_result(data, batch)
+            fetched.extend(repos)
+            if bn < total_batches - 1:
+                time.sleep(GQL_DELAY)
 
-    # Deduplicate (exclude canonical repos too)
-    seen = set(exclude_set)
-    unique = []
-    for link in all_links:
-        key = link["full_name"].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(link)
+        # Compute category stats and filter by health
+        print(f"\nComputing {tier_label} category statistics...")
+        cd_map = {}
+        for r in fetched:
+            c = r["category"]
+            if c not in cd_map:
+                cd_map[c] = {"repos": [], "health_sum": 0, "langs": {}}
+            cd_map[c]["repos"].append(r)
+            cd_map[c]["health_sum"] += r.get("health", 0)
+            lang = r.get("language", "")
+            if lang:
+                cd_map[c]["langs"][lang] = cd_map[c]["langs"].get(lang, 0) + 1
 
-    print(f"\n  {len(unique)} unique non-canonical project repos")
+        categories = []
+        kept = []
+        dropped = 0
+        for cid, cd in cd_map.items():
+            count = len(cd["repos"])
+            if count == 0:
+                continue
+            avg_health = round(cd["health_sum"] / count)
+            if avg_health < MIN_HEALTH:
+                dropped += 1
+                continue
+            meta = cat_meta.get(cid, {})
+            top_langs = sorted(cd["langs"].items(), key=lambda x: -x[1])[:5]
+            sub_ids = {r.get("subcategory_id", "general") for r in cd["repos"]}
+            categories.append({
+                "id": cid,
+                "name": meta.get("name", cid.replace("-", " ").title()),
+                "count": count,
+                "source_repo": meta.get("source_repo", ""),
+                "avg_health": avg_health,
+                "is_awesome_list": tier_label == "unofficial",
+                "tier": tier_label,
+                "subcategory_count": len(sub_ids),
+                "top_languages": [{"name": l, "count": c} for l, c in top_langs],
+            })
+            kept.extend(cd["repos"])
 
-    # Step 4: Batch query GraphQL for metrics
-    print("\nFetching GitHub metrics for non-canonical repos...")
-    nc_repos = []
-    total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
+        categories.sort(key=lambda c: c["name"])
+        print(f"  {len(categories)} {tier_label} categories pass health filter (dropped {dropped})")
+        print(f"  {len(kept)} repos in qualifying categories")
+        return categories, kept, seen
 
-    for batch_num in range(total_batches):
-        start = batch_num * BATCH_SIZE
-        batch = unique[start:start + BATCH_SIZE]
-        print(f"  Batch {batch_num + 1}/{total_batches} ({len(batch)} repos)...", flush=True)
+    # Step 3: Crawl unofficial lists
+    if unofficial:
+        print("\nCrawling unofficial lists for repos...")
+        uo_links, uo_resources, uo_meta = crawl_lists(unofficial, "unofficial")
+    else:
+        uo_links, uo_resources, uo_meta = [], [], {}
 
-        query = build_graphql_query(batch)
-        data = github_graphql(query, token)
-        repos = process_batch_result(data, batch)
-        nc_repos.extend(repos)
+    uo_cats, uo_repos, uo_seen = fetch_and_summarize(uo_links, uo_meta, "unofficial", exclude_set)
 
-        if batch_num < total_batches - 1:
-            time.sleep(GQL_DELAY)
+    # Step 4: Crawl non-canonical lists
+    if noncanonical:
+        print("\nCrawling non-canonical lists for repos...")
+        nc_links, nc_resources, nc_meta = crawl_lists(noncanonical, "non-canonical")
+    else:
+        nc_links, nc_resources, nc_meta = [], [], {}
 
-    # Step 5: Compute category-level stats and filter by avg health > MIN_HEALTH
-    print("\nComputing category statistics...")
-    cat_data = {}
-    for r in nc_repos:
-        c = r["category"]
-        if c not in cat_data:
-            cat_data[c] = {"repos": [], "health_sum": 0, "langs": {}}
-        cat_data[c]["repos"].append(r)
-        cat_data[c]["health_sum"] += r.get("health", 0)
-        lang = r.get("language", "")
-        if lang:
-            cat_data[c]["langs"][lang] = cat_data[c]["langs"].get(lang, 0) + 1
+    nc_cats, nc_repos, _ = fetch_and_summarize(nc_links, nc_meta, "non-canonical", uo_seen)
 
-    nc_categories = []
-    kept_repos = []
-    dropped = 0
+    # Step 5: Write back to repos.json
+    existing["unofficial_categories"] = uo_cats
+    existing["non_canonical_categories"] = nc_cats
 
-    for cid, cd in cat_data.items():
-        count = len(cd["repos"])
-        if count == 0:
-            continue
-        avg_health = round(cd["health_sum"] / count)
-        if avg_health < MIN_HEALTH:
-            dropped += 1
-            continue
-
-        meta = nc_cat_meta.get(cid, {})
-        top_langs = sorted(cd["langs"].items(), key=lambda x: -x[1])[:5]
-
-        # Count subcategories
-        sub_ids = set()
-        for r in cd["repos"]:
-            sub_ids.add(r.get("subcategory_id", "general"))
-
-        nc_categories.append({
-            "id": cid,
-            "name": meta.get("name", cid.replace("-", " ").title()),
-            "count": count,
-            "source_repo": meta.get("source_repo", ""),
-            "avg_health": avg_health,
-            "is_awesome_list": False,
-            "is_non_canonical": True,
-            "subcategory_count": len(sub_ids),
-            "top_languages": [{"name": l, "count": c} for l, c in top_langs],
-        })
-        kept_repos.extend(cd["repos"])
-
-    nc_categories.sort(key=lambda c: c["name"])
-    print(f"  {len(nc_categories)} categories pass health filter (dropped {dropped})")
-    print(f"  {len(kept_repos)} repos in qualifying categories")
-
-    # Step 6: Write back to repos.json
-    existing["non_canonical_categories"] = nc_categories
-
-    # Add non-canonical repos to the main repos array
-    # Mark them so the frontend can distinguish
+    # Replace old non-official repos and add new ones
     existing_repos = existing.get("repos", [])
-    # Remove old non-canonical repos first
-    existing_repos = [r for r in existing_repos if not r.get("is_non_canonical")]
-    existing_repos.extend(sorted(kept_repos, key=lambda r: -r["stars"]))
+    existing_repos = [r for r in existing_repos if r.get("tier", "official") == "official"]
+    all_new = sorted(uo_repos + nc_repos, key=lambda r: -r["stars"])
+    existing_repos.extend(all_new)
     existing["repos"] = existing_repos
+
+    # Deduplicate and merge resources
+    all_new_resources = uo_resources + nc_resources
+    existing_resources = existing.get("resources", [])
+    seen_urls = {r["url"].lower() for r in existing_resources}
+    added_res = []
+    for res in all_new_resources:
+        url_key = res["url"].lower()
+        if url_key not in seen_urls:
+            seen_urls.add(url_key)
+            added_res.append(res)
+    existing_resources.extend(added_res)
+    existing["resources"] = existing_resources
 
     # Update meta
     existing["meta"]["total_repos"] = len(existing_repos)
+    existing["meta"]["total_resources"] = len(existing_resources)
 
     with open(REPO_DATA, "w") as f:
         json.dump(existing, f, separators=(",", ":"))
 
     size_mb = REPO_DATA.stat().st_size / 1024 / 1024
-    print(f"\nDone. {len(nc_categories)} non-canonical lists, {len(kept_repos)} repos added.")
+    print(f"\nDone.")
+    print(f"  Unofficial: {len(uo_cats)} lists, {len(uo_repos)} repos")
+    print(f"  Non-canonical: {len(nc_cats)} lists, {len(nc_repos)} repos")
+    print(f"  Resources added: {len(added_res)}")
+    print(f"  Output: {REPO_DATA} ({size_mb:.1f}MB)")
     print(f"  Total repos in dataset: {len(existing_repos)} ({size_mb:.1f}MB)")
 
 

@@ -179,6 +179,29 @@ def compute_health_by_language(repos):
     return result[:MAX_LANGUAGES]
 
 
+def compute_resource_counts(resources, categories):
+    """Resource count per category for bar chart."""
+    cat_counts = {}
+    for res in resources:
+        cat = res.get("category", "")
+        if cat:
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+    cat_names = {}
+    for c in categories:
+        cat_names[c["id"]] = c.get("name", c["id"])
+
+    result = []
+    for cat_id, count in cat_counts.items():
+        result.append({
+            "label": cat_names.get(cat_id, cat_id),
+            "count": count,
+        })
+
+    result.sort(key=lambda x: -x["count"])
+    return result[:20]
+
+
 def main():
     if not REPO_DATA.exists():
         print(f"Error: {REPO_DATA} not found. Run fetch_data.py first.", file=sys.stderr)
@@ -190,11 +213,12 @@ def main():
 
     repos = data.get("repos", [])
     categories = data.get("categories", [])
+    resources = data.get("resources", [])
     if not repos:
         print("No repos found in data.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  {len(repos)} repos loaded")
+    print(f"  {len(repos)} repos, {len(resources)} resources loaded")
 
     print("Computing language distribution...")
     lang_dist = compute_language_distribution(repos)
@@ -218,15 +242,23 @@ def main():
     health_lang = compute_health_by_language(repos)
     print(f"  {len(health_lang)} languages with enough data")
 
+    res_by_cat = []
+    if resources:
+        print("Computing resource counts by category...")
+        res_by_cat = compute_resource_counts(resources, categories)
+        print(f"  {len(res_by_cat)} categories with resources")
+
     viz = {
         "version": 1,
         "total_repos": len(repos),
+        "total_resources": len(resources),
         "language_distribution": lang_dist,
         "health_histogram": health_hist,
         "star_buckets": star_buck,
         "category_bubbles": cat_bubbles,
         "license_distribution": lic_dist,
         "health_by_language": health_lang,
+        "resource_counts": res_by_cat,
     }
 
     VIZ_OUTPUT.parent.mkdir(parents=True, exist_ok=True)

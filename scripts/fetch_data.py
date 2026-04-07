@@ -24,6 +24,7 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -41,6 +42,28 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
 MAX_CRAWL_DEPTH = 3
+
+# Noise filters for resource link extraction
+NOISE_DOMAINS_RE = re.compile(
+    r"img\.shields\.io|awesome\.re|travis-ci\.|circleci\.com|"
+    r"badge\.fury\.io|coveralls\.io|codecov\.io|"
+    r"patreon\.com|buymeacoffee\.com|opencollective\.com|paypal\.com|"
+    r"twitter\.com|x\.com|linkedin\.com/in|facebook\.com|"
+    r"npmjs\.com/package|pypi\.org/project|crates\.io/crates",
+    re.IGNORECASE,
+)
+NOISE_PATHS_RE = re.compile(
+    r"\.(png|jpg|jpeg|gif|svg|ico)(\?|$)|"
+    r"github\.com/[^/]+/[^/]+/(issues|pulls|wiki|blob|tree|actions|releases|commit|compare)",
+    re.IGNORECASE,
+)
+GITHUB_REPO_RE = re.compile(
+    r"^https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/?$",
+    re.IGNORECASE,
+)
+LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+RESOURCE_DESC_RE = re.compile(r"^\s*[-*]\s+\[[^\]]+\]\([^)]+\)\s*[-:]?\s*(.*)")
 
 
 def get_token():
@@ -80,7 +103,7 @@ def _request(url, token, method="GET", body=None, content_type=None, _retries=0)
             return _request(url, token, method, body, content_type, _retries + 1)
         print(f"  HTTP {e.code} for {url}", file=sys.stderr)
         return None
-    except (TimeoutError, OSError) as e:
+    except (TimeoutError, OSError, HTTPException) as e:
         if _retries < MAX_RETRIES:
             delay = RETRY_DELAY * (2 ** _retries)
             print(f"  Network error: {e} - retrying in {delay}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
@@ -153,6 +176,81 @@ def extract_github_repo_links(text):
         if clean.count("/") == 1:
             links.append({"full_name": clean, "link_name": name})
     return links
+
+
+def is_noise_url(url):
+    """Return True if the URL is a badge, image, social link, or other noise."""
+    if not url or not url.startswith("http"):
+        return True
+    if NOISE_DOMAINS_RE.search(url):
+        return True
+    if NOISE_PATHS_RE.search(url):
+        return True
+    return False
+
+
+def extract_resource_links(readme_text, category_name, category_id, source_repo):
+    """Extract non-GitHub resource links from a sub-list's README.
+
+    Returns a list of resource dicts with url, title, description, category,
+    subcategory, and source_repo.
+    """
+    resources = []
+    current_sub = "General"
+    skip_sections = {"contents", "license", "contributing", "footnotes",
+                     "related", "about", "meta", "table of contents"}
+    source_lower = source_repo.lower()
+    seen_urls = set()
+
+    for line in readme_text.split("\n"):
+        heading = re.match(r"^#{2,4}\s+(.+)", line)
+        if heading:
+            text = heading.group(1).strip()
+            text = re.sub(r"\s*<.*$", "", text)
+            text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+            text = text.strip(" #")
+            if text and text.lower() not in skip_sections:
+                current_sub = text
+            continue
+
+        if not LIST_ITEM_RE.match(line):
+            continue
+
+        for title, url in MARKDOWN_LINK_RE.findall(line):
+            url = url.strip()
+            if is_noise_url(url):
+                continue
+            # Skip GitHub repo links (already handled by parse_sublist_readme)
+            if GITHUB_REPO_RE.match(url):
+                continue
+            url_lower = url.lower()
+            if url_lower in seen_urls:
+                continue
+            seen_urls.add(url_lower)
+
+            # Extract description from text after the link
+            desc = ""
+            desc_match = RESOURCE_DESC_RE.match(line)
+            if desc_match:
+                desc = desc_match.group(1).strip()
+                # Clean trailing markdown artifacts
+                desc = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", desc)
+                desc = desc.strip(" .-")
+            if len(desc) > 200:
+                desc = desc[:197] + "..."
+
+            resources.append({
+                "url": url,
+                "title": title.strip(),
+                "description": desc,
+                "category": category_id,
+                "category_name": category_name,
+                "subcategory": current_sub,
+                "subcategory_id": slugify(current_sub),
+                "source_repo": source_repo,
+            })
+
+    return resources
 
 
 def parse_master_readme(readme_text):
@@ -365,6 +463,7 @@ def process_batch_result(data, batch_info):
         }
         rec["health"] = compute_health(rec)
         rec["is_awesome_list"] = "awesome-list" in topics or "awesome" in topics
+        rec["tier"] = "official"
         repos.append(rec)
 
     return repos
@@ -388,6 +487,7 @@ def main():
     # Step 3: Crawl each sub-list for project repos
     print("\nCrawling sub-lists for project repos...")
     all_links = []
+    all_resources = []
     cat_meta = {}  # category_id -> {name, source_repo, url, is_awesome_list}
     crawled_as_list = {MASTER_LIST.lower()}
     for i, sl in enumerate(sublists):
@@ -416,9 +516,11 @@ def main():
         }
 
         links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
+        resources = extract_resource_links(subreadme, sl["category_name"], cid, sl["full_name"])
         badge_tag = "awesome" if is_awesome else "no badge"
-        print(f" {len(links)} repos [{badge_tag}]")
+        print(f" {len(links)} repos, {len(resources)} resources [{badge_tag}]")
         all_links.extend(links)
+        all_resources.extend(resources)
 
         if i < len(sublists) - 1:
             time.sleep(REST_DELAY)
@@ -484,7 +586,9 @@ def main():
             cid = slugify(r.get("name", r["full_name"].split("/")[1]))
             cname = r.get("link_name", r.get("name", ""))
             links = parse_sublist_readme(subreadme, cname, cid, r["full_name"])
+            resources = extract_resource_links(subreadme, cname, cid, r["full_name"])
             new_links.extend(links)
+            all_resources.extend(resources)
             cat_meta[cid] = {
                 "name": cname,
                 "source_repo": r["full_name"],
@@ -520,6 +624,17 @@ def main():
 
     print(f"\n  Total repos after discovery: {len(all_repos)}")
 
+    # Deduplicate resources by URL (first-seen category wins)
+    seen_urls = set()
+    unique_resources = []
+    for res in all_resources:
+        url_key = res["url"].lower()
+        if url_key not in seen_urls:
+            seen_urls.add(url_key)
+            unique_resources.append(res)
+
+    print(f"  {len(unique_resources)} unique resource links extracted")
+
     # Step 6: Build category, subcategory, and language summaries
     cat_counts = {}
     cat_health = {}  # cid -> [health scores]
@@ -552,6 +667,7 @@ def main():
             "source_repo": meta.get("source_repo", ""),
             "avg_health": avg_health,
             "is_awesome_list": meta.get("is_awesome_list", False),
+            "tier": "official",
             "subcategory_count": len(cat_subcats.get(cid, set())),
             "top_languages": [{"name": l, "count": c} for l, c in top_langs],
         })
@@ -587,12 +703,14 @@ def main():
         "meta": {
             "last_updated": datetime.now(timezone.utc).isoformat(),
             "total_repos": len(all_repos),
+            "total_resources": len(unique_resources),
             "source": f"https://github.com/{MASTER_LIST}",
         },
         "categories": categories,
         "subcategories": subcategories,
         "languages": languages,
         "repos": sorted(all_repos, key=lambda r: -r["stars"]),
+        "resources": unique_resources,
     }
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -600,7 +718,7 @@ def main():
         json.dump(output, f, separators=(",", ":"))
 
     size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
-    print(f"\nDone. {len(all_repos)} repos written to {OUTPUT_PATH} ({size_mb:.1f}MB)")
+    print(f"\nDone. {len(all_repos)} repos, {len(unique_resources)} resources written to {OUTPUT_PATH} ({size_mb:.1f}MB)")
 
 
 if __name__ == "__main__":
