@@ -158,6 +158,7 @@
                 allData = data;
                 state.repos = data.repos || [];
                 buildCategoryMap(data.categories || []);
+                buildCategoryMap(data.non_canonical_categories || []);
                 updateGlobalStats(data);
                 restoreFromHash();
                 if (state.screen === "detail" && state.category !== "all") {
@@ -440,6 +441,44 @@
             frag.appendChild(createCategoryCard(filtered[i]));
         }
         grid.appendChild(frag);
+        renderNonCanonical();
+    }
+
+    function renderNonCanonical() {
+        var ncCats = (allData && allData.non_canonical_categories) || [];
+        var section = els["noncanonical-section"];
+        var grid = els["noncanonical-grid"];
+        if (!section || !grid) return;
+
+        if (!ncCats.length) {
+            section.hidden = true;
+            return;
+        }
+
+        var filtered = ncCats;
+        if (overviewState.language !== "all") {
+            filtered = filtered.filter(function (cat) {
+                var topLangs = cat.top_languages || [];
+                return topLangs.some(function (l) { return l.name === overviewState.language; });
+            });
+        }
+        if (overviewState.minHealth > 0) {
+            filtered = filtered.filter(function (cat) {
+                return (cat.avg_health || 0) >= overviewState.minHealth;
+            });
+        }
+
+        grid.textContent = "";
+        if (!filtered.length) {
+            section.hidden = true;
+            return;
+        }
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < filtered.length; i++) {
+            frag.appendChild(createCategoryCard(filtered[i]));
+        }
+        grid.appendChild(frag);
+        section.hidden = false;
     }
 
     // ----------------------------------------------------------- Global stats
@@ -508,6 +547,7 @@
             frag.appendChild(createCategoryCard(cats[i]));
         }
         grid.appendChild(frag);
+        renderNonCanonical();
     }
 
     function createCategoryCard(cat) {
@@ -1452,6 +1492,7 @@
         info.hidden = false;
         grid.hidden = false;
         els["overview-grid"].hidden = true;
+        if (els["noncanonical-section"]) els["noncanonical-section"].hidden = true;
     }
 
     function clearOverviewSearch() {
@@ -1459,6 +1500,7 @@
         els["overview-search-results"].textContent = "";
         els["overview-search-info"].hidden = true;
         els["overview-grid"].hidden = false;
+        renderNonCanonical();
     }
 
     // -------------------------------------------------------------- URL state

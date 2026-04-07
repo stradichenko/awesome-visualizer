@@ -24,6 +24,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py
 
+      - name: Fetch non-canonical awesome lists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py
+
       - name: Enrich search data
         run: nix develop --command python scripts/enrich_data.py
 

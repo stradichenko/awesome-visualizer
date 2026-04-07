@@ -1112,6 +1112,18 @@
     gap: var(--av-size-md);
 }
 
+/* -- Non-canonical section -- */
+.av-noncanonical {
+    margin-top: var(--av-size-2xl);
+}
+
+.av-noncanonical-desc {
+    font-size: var(--av-font-size-sm);
+    color: var(--av-text-secondary);
+    margin-top: var(--av-size-xs);
+    margin-bottom: var(--av-size-md);
+}
+
 /* -- Category card -- */
 .av-catcard {
     display: flex;
