@@ -385,27 +385,75 @@
         var plotW = width - padding * 2;
         var plotH = height - padding * 2;
 
+        // Content group for zoom/pan transforms
+        var contentG = svgEl("g", { "class": "av-chart-bubble-content" });
+
+        // Grid lines
+        var gridTicks = 5;
+        for (var gi = 0; gi <= gridTicks; gi++) {
+            var gx = padding + (gi / gridTicks) * plotW;
+            var gy = padding + (gi / gridTicks) * plotH;
+            // Vertical grid line
+            var vLine = svgEl("line", {
+                x1: gx, y1: padding, x2: gx, y2: padding + plotH,
+                stroke: "var(--av-border)", "stroke-width": "0.5", "stroke-dasharray": "4 4"
+            });
+            contentG.appendChild(vLine);
+            // Horizontal grid line
+            var hLine = svgEl("line", {
+                x1: padding, y1: gy, x2: padding + plotW, y2: gy,
+                stroke: "var(--av-border)", "stroke-width": "0.5", "stroke-dasharray": "4 4"
+            });
+            contentG.appendChild(hLine);
+        }
+
+        // Axis tick labels
+        for (var ti = 0; ti <= gridTicks; ti++) {
+            var starVal = maxStars > 0 ? Math.round((ti / gridTicks) * maxStars) : 0;
+            var healthVal = maxHealth > 0 ? Math.round(((gridTicks - ti) / gridTicks) * maxHealth) : 0;
+            // X-axis ticks
+            var xTick = svgEl("text", {
+                x: padding + (ti / gridTicks) * plotW,
+                y: padding + plotH + 16,
+                "text-anchor": "middle",
+                "font-size": "9",
+                fill: "var(--av-text-tertiary)"
+            });
+            xTick.textContent = formatCount(starVal);
+            contentG.appendChild(xTick);
+            // Y-axis ticks
+            var yTick = svgEl("text", {
+                x: padding - 8,
+                y: padding + (ti / gridTicks) * plotH + 3,
+                "text-anchor": "end",
+                "font-size": "9",
+                fill: "var(--av-text-tertiary)"
+            });
+            yTick.textContent = healthVal;
+            contentG.appendChild(yTick);
+        }
+
         // Axes labels
         var xLabel = svgEl("text", {
             x: width / 2,
-            y: height - 8,
+            y: height - 4,
             "text-anchor": "middle",
             "font-size": "11",
             fill: "var(--av-text-tertiary)"
         });
         xLabel.textContent = "Avg Stars";
-        svg.appendChild(xLabel);
+        contentG.appendChild(xLabel);
 
         var yLabel = svgEl("text", {
-            x: 12,
+            x: 10,
             y: height / 2,
             "text-anchor": "middle",
             "font-size": "11",
             fill: "var(--av-text-tertiary)",
-            transform: "rotate(-90 12 " + (height / 2) + ")"
+            transform: "rotate(-90 10 " + (height / 2) + ")"
         });
         yLabel.textContent = "Avg Health";
-        svg.appendChild(yLabel);
+        contentG.appendChild(yLabel);
 
         // Plot bubbles
         var minR = 6;
@@ -479,10 +527,194 @@
 
             g.appendChild(label);
 
-            svg.appendChild(g);
+            contentG.appendChild(g);
         }
 
+        svg.appendChild(contentG);
+
+        // Health color legend
+        var legendG = svgEl("g", { "class": "av-chart-bubble-legend" });
+        var legendItems = [
+            { label: "80-100", color: "var(--av-success)" },
+            { label: "60-79", color: "var(--av-info)" },
+            { label: "40-59", color: "var(--av-warning)" },
+            { label: "0-39", color: "var(--av-danger)" }
+        ];
+        var lgX = width - 80;
+        var lgY = 10;
+        for (var li = 0; li < legendItems.length; li++) {
+            var lgItem = legendItems[li];
+            var lgCircle = svgEl("circle", {
+                cx: lgX, cy: lgY + li * 16, r: "5",
+                fill: lgItem.color, opacity: "0.8"
+            });
+            legendG.appendChild(lgCircle);
+            var lgText = svgEl("text", {
+                x: lgX + 10, y: lgY + li * 16 + 4,
+                "font-size": "9", fill: "var(--av-text-secondary)"
+            });
+            lgText.textContent = lgItem.label;
+            legendG.appendChild(lgText);
+        }
+        svg.appendChild(legendG);
+
+        // Bubble size legend
+        var sizeY = lgY + legendItems.length * 16 + 12;
+        var sizeLabel = svgEl("text", {
+            x: lgX - 6, y: sizeY,
+            "font-size": "9", fill: "var(--av-text-tertiary)"
+        });
+        sizeLabel.textContent = "Size = repo count";
+        svg.appendChild(sizeLabel);
+
         wrap.appendChild(svg);
+
+        // Zoom & pan controls
+        var zoomState = { scale: 1, tx: 0, ty: 0, dragging: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+
+        function applyTransform() {
+            contentG.setAttribute("transform",
+                "translate(" + zoomState.tx + "," + zoomState.ty + ") " +
+                "scale(" + zoomState.scale + ")");
+        }
+
+        svg.addEventListener("wheel", function (e) {
+            e.preventDefault();
+            var rect = svg.getBoundingClientRect();
+            var mx = e.clientX - rect.left;
+            var my = e.clientY - rect.top;
+            // Convert screen coords to SVG coords
+            var svgX = mx * (width / rect.width);
+            var svgY = my * (height / rect.height);
+
+            var oldScale = zoomState.scale;
+            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            var newScale = Math.max(0.5, Math.min(oldScale * factor, 8));
+
+            // Zoom toward cursor
+            zoomState.tx = svgX - (svgX - zoomState.tx) * (newScale / oldScale);
+            zoomState.ty = svgY - (svgY - zoomState.ty) * (newScale / oldScale);
+            zoomState.scale = newScale;
+            applyTransform();
+            updateResetBtn();
+        });
+
+        svg.addEventListener("mousedown", function (e) {
+            if (e.button !== 0) return;
+            zoomState.dragging = true;
+            zoomState.startX = e.clientX;
+            zoomState.startY = e.clientY;
+            zoomState.startTx = zoomState.tx;
+            zoomState.startTy = zoomState.ty;
+            svg.style.cursor = "grabbing";
+            e.preventDefault();
+        });
+
+        function onMouseMove(e) {
+            if (!zoomState.dragging) return;
+            var rect = svg.getBoundingClientRect();
+            var dx = (e.clientX - zoomState.startX) * (width / rect.width);
+            var dy = (e.clientY - zoomState.startY) * (height / rect.height);
+            zoomState.tx = zoomState.startTx + dx;
+            zoomState.ty = zoomState.startTy + dy;
+            applyTransform();
+        }
+
+        function onMouseUp() {
+            if (!zoomState.dragging) return;
+            zoomState.dragging = false;
+            svg.style.cursor = "";
+        }
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+
+        // Touch support for pinch-zoom and pan
+        var lastTouchDist = 0;
+        var lastTouchCenter = null;
+
+        svg.addEventListener("touchstart", function (e) {
+            if (e.touches.length === 1) {
+                zoomState.dragging = true;
+                zoomState.startX = e.touches[0].clientX;
+                zoomState.startY = e.touches[0].clientY;
+                zoomState.startTx = zoomState.tx;
+                zoomState.startTy = zoomState.ty;
+            } else if (e.touches.length === 2) {
+                zoomState.dragging = false;
+                var dx = e.touches[1].clientX - e.touches[0].clientX;
+                var dy = e.touches[1].clientY - e.touches[0].clientY;
+                lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+                lastTouchCenter = {
+                    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+                };
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        svg.addEventListener("touchmove", function (e) {
+            if (e.touches.length === 1 && zoomState.dragging) {
+                var rect = svg.getBoundingClientRect();
+                var dx = (e.touches[0].clientX - zoomState.startX) * (width / rect.width);
+                var dy = (e.touches[0].clientY - zoomState.startY) * (height / rect.height);
+                zoomState.tx = zoomState.startTx + dx;
+                zoomState.ty = zoomState.startTy + dy;
+                applyTransform();
+            } else if (e.touches.length === 2 && lastTouchDist > 0) {
+                var tdx = e.touches[1].clientX - e.touches[0].clientX;
+                var tdy = e.touches[1].clientY - e.touches[0].clientY;
+                var dist = Math.sqrt(tdx * tdx + tdy * tdy);
+                var factor = dist / lastTouchDist;
+                var newScale = Math.max(0.5, Math.min(zoomState.scale * factor, 8));
+
+                var rect2 = svg.getBoundingClientRect();
+                var cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect2.left) * (width / rect2.width);
+                var cy = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect2.top) * (height / rect2.height);
+                zoomState.tx = cx - (cx - zoomState.tx) * (newScale / zoomState.scale);
+                zoomState.ty = cy - (cy - zoomState.ty) * (newScale / zoomState.scale);
+                zoomState.scale = newScale;
+                lastTouchDist = dist;
+                applyTransform();
+                updateResetBtn();
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        svg.addEventListener("touchend", function () {
+            zoomState.dragging = false;
+            lastTouchDist = 0;
+            lastTouchCenter = null;
+        });
+
+        // Reset zoom button
+        var resetBtn = document.createElement("button");
+        resetBtn.type = "button";
+        resetBtn.className = "av-chart-bubble-reset";
+        resetBtn.setAttribute("aria-label", "Reset zoom");
+        resetBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 1v4.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.2 10.5a6 6 0 1 0 .9-5.5L1.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        resetBtn.hidden = true;
+
+        function updateResetBtn() {
+            resetBtn.hidden = (zoomState.scale === 1 && zoomState.tx === 0 && zoomState.ty === 0);
+        }
+
+        resetBtn.addEventListener("click", function () {
+            zoomState.scale = 1;
+            zoomState.tx = 0;
+            zoomState.ty = 0;
+            applyTransform();
+            resetBtn.hidden = true;
+        });
+
+        wrap.appendChild(resetBtn);
+
+        // Zoom hint
+        var hint = document.createElement("div");
+        hint.className = "av-chart-bubble-hint";
+        hint.textContent = "Scroll to zoom, drag to pan";
+        wrap.appendChild(hint);
+
         container.appendChild(wrap);
     }
 

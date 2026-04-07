@@ -1057,10 +1057,16 @@
 .av-chart-bubble {
     width: 100%;
     overflow: hidden;
+    position: relative;
 }
 
 .av-chart-bubble-svg {
     display: block;
+    cursor: grab;
+}
+
+.av-chart-bubble-svg:active {
+    cursor: grabbing;
 }
 
 .av-chart-bubble-node circle {
@@ -1070,6 +1076,34 @@
 
 .av-chart-bubble-node:hover circle {
     opacity: 1;
+}
+
+.av-chart-bubble-reset {
+    position: absolute;
+    top: var(--av-size-xs);
+    left: var(--av-size-xs);
+    background: var(--av-surface-2);
+    border: 1px solid var(--av-border);
+    border-radius: var(--av-radius-sm);
+    padding: var(--av-size-3xs) var(--av-size-xs);
+    color: var(--av-text-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--av-size-3xs);
+    transition: background var(--av-transition-fast), color var(--av-transition-fast);
+}
+
+.av-chart-bubble-reset:hover {
+    background: var(--av-surface-3);
+    color: var(--av-text);
+}
+
+.av-chart-bubble-hint {
+    text-align: center;
+    font-size: var(--av-font-size-xs);
+    color: var(--av-text-tertiary);
+    padding-top: var(--av-size-3xs);
 }
 
 .av-overview-grid {
