@@ -24,9 +24,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py
 
+      - name: Enrich search data
+        run: nix develop --command python scripts/enrich_data.py
+
+      - name: Compute visualization data
+        run: nix develop --command python scripts/compute_viz.py
+
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/data/repos.json
+          git add site/data/repos.json site/data/search-meta.json site/data/viz-data.json
           git diff --cached --quiet || git commit -m "Update repos.json [skip ci]" && git push

@@ -329,19 +329,16 @@ def process_batch_result(data, batch_info):
             "full_name": nwo,
             "name": nwo.split("/")[1],
             "owner": nwo.split("/")[0],
-            "url": rd["url"],
-            "description": rd.get("description") or "",
+            "description": (rd.get("description") or "")[:150],
             "stars": rd["stargazerCount"],
             "forks": rd["forkCount"],
             "open_issues": rd["issues"]["totalCount"],
-            "open_prs": rd["pullRequests"]["totalCount"],
             "language": (rd.get("primaryLanguage") or {}).get("name", ""),
             "license": (rd.get("licenseInfo") or {}).get("spdxId", ""),
-            "created_at": rd.get("createdAt", ""),
             "last_push": rd.get("pushedAt", ""),
             "is_archived": rd.get("isArchived", False),
             "commits_90d": commits_90d,
-            "topics": topics,
+            "topics": topics[:5],
             "category": info["category"],
             "subcategory": info.get("subcategory", "General"),
             "subcategory_id": info.get("subcategory_id", "general"),
@@ -452,7 +449,6 @@ def main():
             "name": name,
             "count": count,
             "source_repo": meta.get("source_repo", ""),
-            "url": meta.get("url", ""),
             "avg_health": avg_health,
             "subcategory_count": len(cat_subcats.get(cid, set())),
             "top_languages": [{"name": l, "count": c} for l, c in top_langs],
@@ -499,9 +495,10 @@ def main():
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, "w") as f:
-        json.dump(output, f, indent=2)
+        json.dump(output, f, separators=(",", ":"))
 
-    print(f"\nDone. {len(all_repos)} repos written to {OUTPUT_PATH}")
+    size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
+    print(f"\nDone. {len(all_repos)} repos written to {OUTPUT_PATH} ({size_mb:.1f}MB)")
 
 
 if __name__ == "__main__":

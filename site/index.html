@@ -52,6 +52,15 @@
         <symbol id="icon-subcategory" viewBox="0 0 16 16">
             <path d="M1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25V2.75C0 1.784.784 1 1.75 1zM1.5 2.75v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25zM11.75 3a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75zm-8.25.75a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0zM8 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 3z"/>
         </symbol>
+        <symbol id="icon-columns" viewBox="0 0 16 16">
+            <path d="M2.75 0h10.5C14.216 0 15 .784 15 1.75v12.5A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25V1.75C1 .784 1.784 0 2.75 0zM2.5 1.75v12.5c0 .138.112.25.25.25H5.5V1.5H2.75a.25.25 0 0 0-.25.25zM7 1.5v13h2.5v-13H7zm4 0v13h2.25a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H11z"/>
+        </symbol>
+        <symbol id="icon-eye" viewBox="0 0 16 16">
+            <path d="M8 2c-2.837 0-5.34 1.593-6.898 4.05a2.006 2.006 0 0 0 0 1.9C2.66 10.407 5.163 12 8 12s5.34-1.593 6.898-4.05a2.006 2.006 0 0 0 0-1.9C13.34 3.593 10.837 2 8 2zM8 10a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+        </symbol>
+        <symbol id="icon-chevron-down" viewBox="0 0 16 16">
+            <path d="M12.78 5.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0z"/>
+        </symbol>
     </svg>
 
     <nav class="av-navbar" aria-label="Main navigation">
@@ -83,7 +92,72 @@
                     <span class="av-stat-label">Categories</span>
                 </div>
             </section>
-            <h2 class="av-overview-heading">Awesome Lists</h2>
+
+            <button type="button" class="av-viz-toggle" data-action="toggle-overview-viz" aria-expanded="false" aria-controls="overview-viz-section">
+                <svg class="av-icon" aria-hidden="true"><use href="#icon-subcategory"/></svg>
+                <span>Visualizations</span>
+                <svg class="av-viz-toggle-chevron av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
+            </button>
+
+            <!-- Visualization dashboard -->
+            <section id="overview-viz-section" class="av-viz" data-ref="viz-section" aria-label="Data visualizations" hidden>
+                <h2 class="av-viz-heading">Ecosystem Overview</h2>
+                <div class="av-viz-grid">
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Languages</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-lang-donut"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Health Distribution</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-health-hist"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Star Ranges</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-star-buckets"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Health by Language</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-health-lang"></div>
+                    </div>
+                </div>
+                <div class="av-viz-full">
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Category Landscape</h3>
+                        <p class="av-viz-panel-desc">Bubble size = repo count, X = avg stars, Y = avg health</p>
+                        <div class="av-viz-panel-body av-viz-panel-body--wide" data-ref="viz-category-bubbles"></div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="av-overview-header">
+                <h2 class="av-overview-heading">Awesome Lists</h2>
+                <div class="av-overview-search">
+                    <label for="overview-search-input" class="av-sr-only">Search all repositories</label>
+                    <svg class="av-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+                    <input
+                        type="search"
+                        id="overview-search-input"
+                        class="av-input"
+                        placeholder="Search all repositories..."
+                        autocomplete="off"
+                    >
+                </div>
+            </div>
+            <div class="av-overview-filter-bar">
+                <label for="overview-filter-language" class="av-sr-only">Filter by language</label>
+                <select id="overview-filter-language" class="av-select">
+                    <option value="all">All Languages</option>
+                </select>
+                <label for="overview-filter-health" class="av-sr-only">Minimum health score</label>
+                <select id="overview-filter-health" class="av-select">
+                    <option value="0">Any Health</option>
+                    <option value="40">Health 40+</option>
+                    <option value="60">Health 60+</option>
+                    <option value="80">Health 80+</option>
+                </select>
+            </div>
+            <div class="av-overview-search-info" data-ref="overview-search-info" aria-live="polite" hidden></div>
+            <div class="av-grid" data-ref="overview-search-results" role="list" aria-label="Search results" hidden></div>
             <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Awesome list categories"></div>
         </section>
 
@@ -122,7 +196,30 @@
                 </div>
             </section>
 
-        <section class="av-controls" aria-label="Search and filter controls">
+            <button type="button" class="av-viz-toggle av-viz-toggle--open" data-action="toggle-detail-viz" aria-expanded="true" aria-controls="detail-viz-section">
+                <svg class="av-icon" aria-hidden="true"><use href="#icon-subcategory"/></svg>
+                <span>Visualizations</span>
+                <svg class="av-viz-toggle-chevron av-viz-toggle-chevron--open av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
+            </button>
+
+            <section id="detail-viz-section" class="av-viz" data-ref="detail-viz-section" aria-label="Category visualizations">
+                <div class="av-viz-grid">
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Languages</h3>
+                        <div class="av-viz-panel-body" data-ref="detail-viz-lang-donut"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Health Distribution</h3>
+                        <div class="av-viz-panel-body" data-ref="detail-viz-health-hist"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Star Ranges</h3>
+                        <div class="av-viz-panel-body" data-ref="detail-viz-star-buckets"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="av-controls" aria-label="Search and filter controls">
             <div class="av-search">
                 <label for="search-input" class="av-sr-only">Search repositories</label>
                 <svg class="av-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
@@ -133,7 +230,12 @@
                     placeholder="Search -- * wildcard, | or, space/& and"
                     data-action="search"
                     autocomplete="off"
+                    role="combobox"
+                    aria-expanded="false"
+                    aria-controls="search-suggestions"
+                    aria-autocomplete="list"
                 >
+                <ul id="search-suggestions" class="av-suggestions" role="listbox" aria-label="Search suggestions" hidden></ul>
             </div>
             <div class="av-filters">
                 <label for="filter-subcategory" class="av-sr-only">Filter by subcategory</label>
@@ -184,6 +286,7 @@
                 >
                     <svg class="av-icon" aria-hidden="true"><use href="#icon-table"/></svg>
                 </button>
+
             </div>
         </section>
 
@@ -195,19 +298,7 @@
             <table class="av-table" aria-label="Repository data">
                 <caption class="av-sr-only">Awesome list repositories with metrics</caption>
                 <thead>
-                    <tr>
-                        <th scope="col">Repository</th>
-                        <th scope="col">Description</th>
-                        <th scope="col">Subcategory</th>
-                        <th scope="col">Stars</th>
-                        <th scope="col">Forks</th>
-                        <th scope="col">Issues</th>
-                        <th scope="col">Language</th>
-                        <th scope="col">License</th>
-                        <th scope="col">Commits (90d)</th>
-                        <th scope="col">Last Push</th>
-                        <th scope="col">Health</th>
-                    </tr>
+                    <tr data-ref="repo-table-head"></tr>
                 </thead>
                 <tbody data-ref="repo-table-body"></tbody>
             </table>
@@ -225,6 +316,9 @@
         </p>
     </footer>
 
+    <div id="chart-tooltip" class="av-tooltip" role="tooltip" hidden></div>
+
+    <script src="js/charts.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

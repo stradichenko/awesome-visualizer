@@ -19,6 +19,19 @@ Dark-first, token-driven, responsive. No frameworks, no build step.
 
 ---
 
+## Visual Theme & Atmosphere
+
+Dark analytical dashboard. Developer-focused, data-dense, utilitarian.
+Inspired by GitHub's dark mode and IDE aesthetics. The interface recedes --
+content and metrics are the focus, not chrome. Minimal ornamentation;
+clarity over personality.
+
+- **Density**: High -- compact cards, tight spacing, small base font (14px)
+- **Mood**: Calm, technical, precise
+- **Philosophy**: Every pixel earns its place through information
+
+---
+
 ## File Layout
 
 ```
@@ -224,6 +237,62 @@ Score thresholds:
 - `data-ref="name"` -- DOM element references for JS
 - `data-action="verb"` -- Action buttons for delegated listeners
 - `data-page="n"` -- Pagination targets
+
+---
+
+## Depth & Elevation
+
+Surfaces get lighter and shadows get stronger as elements rise.
+
+| Level | Surface token | Shadow token | Typical usage |
+|-------|---------------|--------------|---------------|
+| 0 (base) | `--av-bg` | none | Page background |
+| 1 | `--av-surface-1` | none | Cards, navbar, controls bar |
+| 2 | `--av-surface-2` | `--av-shadow-sm` | Inputs, table headers, hover states |
+| 3 | `--av-surface-3` | `--av-shadow-md` | Autocomplete dropdown, popovers |
+| Overlay | -- | `--av-shadow-lg` | Modals, full-screen overlays |
+
+Rule: never skip levels. A popover (level 3) should not sit directly on the
+page background (level 0) without context.
+
+---
+
+## Responsive Breakpoints
+
+| Name | Max-width | Key changes |
+|---------|-----------|----------------------------------------------|
+| Desktop | -- | 4-col stats, multi-col card grid, full navbar |
+| Tablet | 768px | 2-col stats, 1-col cards, stacked controls |
+| Compact | 480px | 1-col stats |
+
+Design targets:
+- Touch targets >= 44px on tablet and below
+- Card grid collapses to single column at 768px
+- Navbar padding and font size reduce at 768px
+- Controls bar stacks vertically at 768px
+- Stats grid goes to 1-column at 480px
+
+---
+
+## Do's and Don'ts
+
+**Do:**
+
+1. Reference `--av-*` tokens for every color, spacing, radius, and shadow
+2. Use semantic HTML -- `<article>`, `<section>`, `<nav>`, `<button>`
+3. Use `data-ref` / `data-action` attributes for JS hooks
+4. Use CSS transitions (`--av-transition-fast`, `--av-transition-base`)
+5. Use inline SVG for all icons
+6. Test at all three breakpoints before shipping
+
+**Don't:**
+
+1. Hardcode hex colors, pixel sizes, or font stacks in component CSS
+2. Add external CDN links, icon fonts, or JS animation libraries
+3. Use `<div onclick>` -- always use `<button>` with `data-action`
+4. Write inline `style=""` (exception: CSS custom property injection)
+5. Assign IDs for styling -- use `av-`-prefixed classes
+6. Skip elevation levels (e.g., popover directly on page background)
 
 ---
 
