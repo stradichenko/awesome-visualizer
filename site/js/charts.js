@@ -114,7 +114,6 @@
         var pad = 12;
         var x = e.clientX + pad;
         var y = e.clientY + pad;
-        // Force layout so we can read dimensions
         var w = tip.offsetWidth;
         var h = tip.offsetHeight;
         if (x + w > window.innerWidth - pad) x = e.clientX - w - pad;
@@ -123,6 +122,16 @@
         if (y < pad) y = pad;
         tip.style.left = x + "px";
         tip.style.top = y + "px";
+    }
+
+    // Throttled version for mousemove - max one reflow per animation frame
+    var _rafId = 0;
+    function throttledPositionTooltip(e) {
+        if (_rafId) return;
+        _rafId = requestAnimationFrame(function () {
+            _rafId = 0;
+            positionTooltip(e);
+        });
     }
 
     function hideTooltip() {
@@ -187,7 +196,7 @@
                             arcSlice.count + ' repos (' + pctVal + '%)', e
                         );
                     });
-                    arcPath.addEventListener("mousemove", function (e) { positionTooltip(e); });
+                    arcPath.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                     arcPath.addEventListener("mouseleave", function () {
                         var arcs = arcSvg.querySelectorAll(".av-chart-arc");
                         for (var a = 0; a < arcs.length; a++) {
@@ -317,7 +326,7 @@
                     barRow.classList.add("is-active");
                     showTooltip('<strong>' + escText(barData.label) + '</strong><br>' + formatCount(barData.count) + ' repos', e);
                 });
-                barRow.addEventListener("mousemove", function (e) { positionTooltip(e); });
+                barRow.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                 barRow.addEventListener("mouseleave", function () {
                     barRow.classList.remove("is-active");
                     hideTooltip();
@@ -493,7 +502,7 @@
                         'Avg stars: ' + formatCount(bubbleData.stars), e
                     );
                 });
-                bubbleG.addEventListener("mousemove", function (e) { positionTooltip(e); });
+                bubbleG.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                 bubbleG.addEventListener("mouseleave", function () {
                     bubbleCircle.setAttribute("opacity", "0.7");
                     bubbleCircle.setAttribute("stroke-width", "1.5");
@@ -736,7 +745,7 @@
 
         for (var j = 0; j < data.length; j++) {
             var d = data[j];
-            var val = d.health || d.count || 0;
+            val = d.health || d.count || 0;
             var pct = (val / maxVal) * 100;
             var color = d.color || healthColorForScore(d.health || 0) || PALETTE[j % PALETTE.length];
 
@@ -756,7 +765,7 @@
                     barRow.classList.add("is-active");
                     showTooltip('<strong>' + escText(barData.name) + '</strong><br>Health: ' + barVal, e);
                 });
-                barRow.addEventListener("mousemove", function (e) { positionTooltip(e); });
+                barRow.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                 barRow.addEventListener("mouseleave", function () {
                     barRow.classList.remove("is-active");
                     hideTooltip();

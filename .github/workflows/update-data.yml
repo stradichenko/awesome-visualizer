@@ -2,10 +2,8 @@ name: Update Data
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * 1'
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
@@ -35,9 +33,12 @@ jobs:
       - name: Compute visualization data
         run: nix develop --command python scripts/compute_viz.py
 
+      - name: Split data for lazy loading
+        run: nix develop --command python scripts/split_data.py
+
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/data/repos.json site/data/search-meta.json site/data/viz-data.json
+          git add site/data/
           git diff --cached --quiet || git commit -m "Update repos.json [skip ci]" && git push

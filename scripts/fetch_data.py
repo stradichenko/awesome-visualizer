@@ -20,26 +20,36 @@ Requires GITHUB_TOKEN environment variable.
 import base64
 import json
 import os
+import random
 import re
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime, timedelta
 from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import (
+    BATCH_RETRIES,
+    BATCH_SIZE,
+    GQL_DELAY,
+    MAX_RETRIES,
+    RETRY_DELAY,
+    compute_health,
+)
+
 GITHUB_GRAPHQL = "https://api.github.com/graphql"
 GITHUB_API = "https://api.github.com"
 MASTER_LIST = "sindresorhus/awesome"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
-BATCH_SIZE = 40
-NINETY_DAYS_AGO = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-MAX_SUBLISTS = 500
+NINETY_DAYS_AGO = (datetime.now(UTC) - timedelta(days=90)).isoformat()
+MAX_SUBLISTS = 800
 REST_DELAY = 0.3
-GQL_DELAY = 0.5
-MAX_RETRIES = 3
-RETRY_DELAY = 2
+README_WORKERS = 15
+GQL_WORKERS = 2
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
 MAX_CRAWL_DEPTH = 3
 
@@ -49,7 +59,8 @@ NOISE_DOMAINS_RE = re.compile(
     r"badge\.fury\.io|coveralls\.io|codecov\.io|"
     r"patreon\.com|buymeacoffee\.com|opencollective\.com|paypal\.com|"
     r"twitter\.com|x\.com|linkedin\.com/in|facebook\.com|"
-    r"npmjs\.com/package|pypi\.org/project|crates\.io/crates",
+    r"npmjs\.com/package|pypi\.org/project|crates\.io/crates|"
+    r"scholar\.google\.",
     re.IGNORECASE,
 )
 NOISE_PATHS_RE = re.compile(
@@ -57,6 +68,12 @@ NOISE_PATHS_RE = re.compile(
     r"github\.com/[^/]+/[^/]+/(issues|pulls|wiki|blob|tree|actions|releases|commit|compare)",
     re.IGNORECASE,
 )
+# GitHub paths that look like owner/repo but aren't repositories
+NOT_REPO_PREFIXES = frozenset({
+    "sponsors", "orgs", "settings", "features", "topics",
+    "collections", "marketplace", "apps", "about", "enterprise",
+    "pricing", "security", "customer-stories", "readme",
+})
 GITHUB_REPO_RE = re.compile(
     r"^https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/?$",
     re.IGNORECASE,
@@ -96,17 +113,17 @@ def _request(url, token, method="GET", body=None, content_type=None, _retries=0)
             return _request(url, token, method, body, content_type, _retries)
         if e.code == 404:
             return None
-        if e.code in (500, 502, 503) and _retries < MAX_RETRIES:
-            delay = RETRY_DELAY * (2 ** _retries)
-            print(f"  HTTP {e.code} - retrying in {delay}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
+        if e.code in (500, 502, 503, 504) and _retries < MAX_RETRIES:
+            delay = RETRY_DELAY * (2 ** _retries) + random.uniform(0, RETRY_DELAY)
+            print(f"  HTTP {e.code} - retrying in {delay:.0f}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
             time.sleep(delay)
             return _request(url, token, method, body, content_type, _retries + 1)
         print(f"  HTTP {e.code} for {url}", file=sys.stderr)
         return None
     except (TimeoutError, OSError, HTTPException) as e:
         if _retries < MAX_RETRIES:
-            delay = RETRY_DELAY * (2 ** _retries)
-            print(f"  Network error: {e} - retrying in {delay}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
+            delay = RETRY_DELAY * (2 ** _retries) + random.uniform(0, RETRY_DELAY)
+            print(f"  Network error: {e} - retrying in {delay:.0f}s (attempt {_retries + 1}/{MAX_RETRIES}) ...", file=sys.stderr)
             time.sleep(delay)
             return _request(url, token, method, body, content_type, _retries + 1)
         print(f"  Network error for {url}: {e}", file=sys.stderr)
@@ -122,14 +139,16 @@ def github_rest(path, token):
 def github_graphql(query, token):
     """POST a GraphQL query to GitHub."""
     body = json.dumps({"query": query}).encode()
-    data = _request(GITHUB_GRAPHQL, token, method="POST", body=body, content_type="application/json")
-    if not data:
-        return {}
-    if "errors" in data:
-        for err in data["errors"]:
+    raw = _request(GITHUB_GRAPHQL, token, method="POST", body=body, content_type="application/json")
+    if not raw:
+        return {}, []
+    errors = []
+    if "errors" in raw:
+        for err in raw["errors"]:
             msg = err.get("message", "unknown error")
+            errors.append(msg)
             print(f"  GraphQL error: {msg}", file=sys.stderr)
-    return data.get("data") or {}
+    return raw.get("data") or {}, errors
 
 
 def slugify(text):
@@ -174,6 +193,9 @@ def extract_github_repo_links(text):
     ):
         clean = repo_path.strip("/")
         if clean.count("/") == 1:
+            owner = clean.split("/")[0].lower()
+            if owner in NOT_REPO_PREFIXES:
+                continue
             links.append({"full_name": clean, "link_name": name})
     return links
 
@@ -184,9 +206,31 @@ def is_noise_url(url):
         return True
     if NOISE_DOMAINS_RE.search(url):
         return True
-    if NOISE_PATHS_RE.search(url):
-        return True
-    return False
+    return bool(NOISE_PATHS_RE.search(url))
+
+
+_NOISE_LINK_RE = re.compile(
+    r"\[(All Versions|Preprint|Paper|Project|Website|Code|Homepage"
+    r"|Slides|Video|Demo|Blog|Talk|Poster|Dataset|Models?)\]\([^)]*\)",
+    re.IGNORECASE,
+)
+
+
+def _clean_resource_desc(desc):
+    """Strip markdown formatting and noise link labels from a resource description."""
+    # Remove noise markdown links entirely (before link-to-text)
+    desc = _NOISE_LINK_RE.sub("", desc)
+    # Convert remaining markdown links to plain text
+    desc = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", desc)
+    # Strip bold/italic markers: ***text***, **text**, *text*
+    desc = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", desc)
+    # Strip _underline_ and ~~strikethrough~~ markers
+    desc = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", desc)
+    desc = re.sub(r"~~([^~]+)~~", r"\1", desc)
+    # Collapse orphaned punctuation and whitespace
+    desc = re.sub(r"(?:[.,:;]\s*){2,}", ". ", desc)
+    desc = re.sub(r"\s{2,}", " ", desc)
+    return desc.strip(" .-")
 
 
 def extract_resource_links(readme_text, category_name, category_id, source_repo):
@@ -199,7 +243,6 @@ def extract_resource_links(readme_text, category_name, category_id, source_repo)
     current_sub = "General"
     skip_sections = {"contents", "license", "contributing", "footnotes",
                      "related", "about", "meta", "table of contents"}
-    source_lower = source_repo.lower()
     seen_urls = set()
 
     for line in readme_text.split("\n"):
@@ -216,7 +259,13 @@ def extract_resource_links(readme_text, category_name, category_id, source_repo)
         if not LIST_ITEM_RE.match(line):
             continue
 
+        # Only extract the first non-noise, non-GitHub link per list item.
+        # Secondary inline links ([All Versions], [paper], [Project], etc.)
+        # are references/mirrors, not standalone resources.
+        found = False
         for title, url in MARKDOWN_LINK_RE.findall(line):
+            if found:
+                break
             url = url.strip()
             if is_noise_url(url):
                 continue
@@ -227,21 +276,20 @@ def extract_resource_links(readme_text, category_name, category_id, source_repo)
             if url_lower in seen_urls:
                 continue
             seen_urls.add(url_lower)
+            found = True
 
             # Extract description from text after the link
             desc = ""
             desc_match = RESOURCE_DESC_RE.match(line)
             if desc_match:
                 desc = desc_match.group(1).strip()
-                # Clean trailing markdown artifacts
-                desc = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", desc)
-                desc = desc.strip(" .-")
+                desc = _clean_resource_desc(desc)
             if len(desc) > 200:
                 desc = desc[:197] + "..."
 
             resources.append({
                 "url": url,
-                "title": title.strip(),
+                "title": title.strip().lstrip("["),
                 "description": desc,
                 "category": category_id,
                 "category_name": category_name,
@@ -273,6 +321,9 @@ def parse_master_readme(readme_text):
         ):
             clean = repo_path.strip("/")
             if clean.count("/") == 1:
+                owner = clean.split("/")[0].lower()
+                if owner in NOT_REPO_PREFIXES:
+                    continue
                 sublists.append({
                     "full_name": clean,
                     "link_name": name,
@@ -344,13 +395,20 @@ def build_graphql_query(batch):
       stargazerCount
       forkCount
       isArchived
+      isFork
       issues(states: OPEN) {{ totalCount }}
       pullRequests(states: OPEN) {{ totalCount }}
+      watchers {{ totalCount }}
       primaryLanguage {{ name }}
       licenseInfo {{ spdxId }}
       pushedAt
       createdAt
       updatedAt
+      hasWikiEnabled
+      hasDiscussionsEnabled
+      releases(last: 1) {{
+        nodes {{ tagName publishedAt }}
+      }}
       repositoryTopics(first: 10) {{
         nodes {{ topic {{ name }} }}
       }}
@@ -368,58 +426,7 @@ def build_graphql_query(batch):
     return "{" + "".join(parts) + "\n}"
 
 
-def compute_health(rec):
-    """Compute a 0-100 health score from repo metrics."""
-    score = 0
-
-    stars = rec.get("stars", 0)
-    if stars >= 10000:
-        score += 25
-    elif stars >= 1000:
-        score += 20
-    elif stars >= 100:
-        score += 15
-    elif stars >= 10:
-        score += 8
-    else:
-        score += 2
-
-    c90 = rec.get("commits_90d", 0)
-    if c90 >= 50:
-        score += 25
-    elif c90 >= 20:
-        score += 20
-    elif c90 >= 5:
-        score += 15
-    elif c90 >= 1:
-        score += 8
-
-    push = rec.get("last_push", "")
-    if push:
-        try:
-            dt = datetime.fromisoformat(push.replace("Z", "+00:00"))
-            days = (datetime.now(timezone.utc) - dt).days
-            if days <= 30:
-                score += 25
-            elif days <= 90:
-                score += 20
-            elif days <= 180:
-                score += 15
-            elif days <= 365:
-                score += 8
-            else:
-                score += 2
-        except (ValueError, TypeError):
-            pass
-
-    if rec.get("license"):
-        score += 8
-    if rec.get("description"):
-        score += 7
-    if not rec.get("is_archived", False):
-        score += 10
-
-    return min(score, 100)
+# compute_health imported from shared.py
 
 
 def process_batch_result(data, batch_info):
@@ -443,6 +450,13 @@ def process_batch_result(data, batch_info):
             topics.append(node["topic"]["name"])
 
         nwo = rd["nameWithOwner"]
+
+        # Latest release info
+        latest_release = ""
+        releases = (rd.get("releases") or {}).get("nodes", [])
+        if releases:
+            latest_release = releases[0].get("tagName", "")
+
         rec = {
             "full_name": nwo,
             "name": nwo.split("/")[1],
@@ -451,12 +465,20 @@ def process_batch_result(data, batch_info):
             "stars": rd["stargazerCount"],
             "forks": rd["forkCount"],
             "open_issues": rd["issues"]["totalCount"],
+            "open_prs": rd["pullRequests"]["totalCount"],
+            "watchers": rd["watchers"]["totalCount"],
             "language": (rd.get("primaryLanguage") or {}).get("name", ""),
             "license": (rd.get("licenseInfo") or {}).get("spdxId", ""),
             "last_push": rd.get("pushedAt", ""),
+            "created_at": rd.get("createdAt", ""),
+            "updated_at": rd.get("updatedAt", ""),
             "is_archived": rd.get("isArchived", False),
+            "is_fork": rd.get("isFork", False),
+            "has_wiki": rd.get("hasWikiEnabled", False),
+            "has_discussions": rd.get("hasDiscussionsEnabled", False),
+            "latest_release": latest_release,
             "commits_90d": commits_90d,
-            "topics": topics[:5],
+            "topics": topics,
             "category": info["category"],
             "subcategory": info.get("subcategory", "General"),
             "subcategory_id": info.get("subcategory_id", "general"),
@@ -484,21 +506,33 @@ def main():
     sublists = parse_master_readme(readme)
     print(f"  Found {len(sublists)} sub-lists")
 
-    # Step 3: Crawl each sub-list for project repos
+    # Step 3: Crawl each sub-list for project repos (parallel)
     print("\nCrawling sub-lists for project repos...")
     all_links = []
     all_resources = []
     cat_meta = {}  # category_id -> {name, source_repo, url, is_awesome_list}
     crawled_as_list = {MASTER_LIST.lower()}
-    for i, sl in enumerate(sublists):
+    for sl in sublists:
+        crawled_as_list.add(sl["full_name"].lower())
+
+    def _fetch_sublist(idx_sl):
+        idx, sl = idx_sl
+        subreadme = fetch_repo_readme(sl["full_name"], token)
+        return idx, sl, subreadme
+
+    sublist_results = [None] * len(sublists)
+    with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
+        futures = {pool.submit(_fetch_sublist, (i, sl)): i for i, sl in enumerate(sublists)}
+        for future in as_completed(futures):
+            idx, sl, subreadme = future.result()
+            sublist_results[idx] = (sl, subreadme)
+
+    for i, (sl, subreadme) in enumerate(sublist_results):
         tag = f"[{i + 1}/{len(sublists)}]"
         cid = sl["category_id"]
-        crawled_as_list.add(sl["full_name"].lower())
-        print(f"  {tag} {sl['full_name']} ({sl['category_name']})...", end="", flush=True)
 
-        subreadme = fetch_repo_readme(sl["full_name"], token)
         if not subreadme:
-            print(" SKIP")
+            print(f"  {tag} {sl['full_name']} ({sl['category_name']})... SKIP")
             cat_meta[cid] = {
                 "name": sl["category_name"],
                 "source_repo": sl["full_name"],
@@ -518,12 +552,9 @@ def main():
         links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
         resources = extract_resource_links(subreadme, sl["category_name"], cid, sl["full_name"])
         badge_tag = "awesome" if is_awesome else "no badge"
-        print(f" {len(links)} repos, {len(resources)} resources [{badge_tag}]")
+        print(f"  {tag} {sl['full_name']} ({sl['category_name']})... {len(links)} repos, {len(resources)} resources [{badge_tag}]")
         all_links.extend(links)
         all_resources.extend(resources)
-
-        if i < len(sublists) - 1:
-            time.sleep(REST_DELAY)
 
     # Step 4: Deduplicate (first-seen category wins)
     seen = set()
@@ -536,29 +567,101 @@ def main():
 
     print(f"\n  {len(unique)} unique project repos after deduplication")
 
-    # Step 5: Batch query GraphQL for metrics
+    # Step 5: Batch query GraphQL for metrics (parallel)
     print("\nFetching GitHub metrics...")
     all_repos = []
     total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
-
+    batches = []
     for batch_num in range(total_batches):
         start = batch_num * BATCH_SIZE
-        batch = unique[start : start + BATCH_SIZE]
-        print(f"  Batch {batch_num + 1}/{total_batches} ({len(batch)} repos)...", flush=True)
+        batches.append((batch_num, unique[start : start + BATCH_SIZE]))
 
+    def _fetch_gql_batch(batch_num_info):
+        bn, batch = batch_num_info
         query = build_graphql_query(batch)
-        data = github_graphql(query, token)
+        data, _errors = github_graphql(query, token)
         repos = process_batch_result(data, batch)
-        all_repos.extend(repos)
+        failed = not data  # True if the request returned nothing
+        # Track repos that got no GraphQL result (deleted/renamed/private)
+        resolved_names = {r["full_name"].lower() for r in repos}
+        missed = [info for info in batch if info["full_name"].lower() not in resolved_names]
+        return bn, batch, repos, failed, missed
 
-        if batch_num < total_batches - 1:
+    gql_results = [None] * total_batches
+    all_missed = []  # repos that got no GraphQL result
+    with ThreadPoolExecutor(max_workers=GQL_WORKERS) as pool:
+        futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in batches}
+        for future in as_completed(futures):
+            bn, batch, repos, failed, missed = future.result()
+            gql_results[bn] = repos
+            all_missed.extend(missed)
+            label = "FAILED" if failed else f"{len(repos)} repos"
+            print(f"  Batch {bn + 1}/{total_batches} done ({label})", flush=True)
+
+    # Retry failed batches sequentially with escalating cooldown
+    for attempt in range(1, BATCH_RETRIES + 1):
+        failed_indices = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0]
+        retry_batches = [(i, batches[i][1]) for i in failed_indices if len(batches[i][1]) > 0]
+        if not retry_batches:
+            break
+        cooldown = GQL_DELAY * (2 ** attempt)
+        print(f"  Retrying {len(retry_batches)} failed batches (round {attempt}/{BATCH_RETRIES}, {cooldown:.0f}s cooldown)...", flush=True)
+        time.sleep(cooldown)
+        for idx, batch in retry_batches:
             time.sleep(GQL_DELAY)
+            query = build_graphql_query(batch)
+            data, _errors = github_graphql(query, token)
+            repos = process_batch_result(data, batch)
+            if repos:
+                gql_results[idx] = repos
+                print(f"    Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
+
+    still_failed = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0 and len(batches[i][1]) > 0]
+    if still_failed:
+        lost = sum(len(batches[i][1]) for i in still_failed)
+        print(f"  WARNING: {len(still_failed)} batches permanently failed ({lost} repos lost)", file=sys.stderr)
+
+    for repos in gql_results:
+        if repos:
+            all_repos.extend(repos)
+
+    # Recover renamed/transferred repos via REST API redirect
+    if all_missed:
+        resolved_already = {r["full_name"].lower() for r in all_repos}
+        to_resolve = [info for info in all_missed if info["full_name"].lower() not in resolved_already]
+        if to_resolve:
+            print(f"\nResolving {len(to_resolve)} unresolved repos via REST API...")
+            redirected = []
+            for info in to_resolve:
+                time.sleep(REST_DELAY)
+                rest = github_rest(f"repos/{info['full_name']}", token)
+                if rest and rest.get("full_name"):
+                    new_name = rest["full_name"]
+                    if new_name.lower() != info["full_name"].lower():
+                        print(f"  {info['full_name']} -> {new_name}", flush=True)
+                        redir_info = dict(info)
+                        redir_info["full_name"] = new_name
+                        redirected.append(redir_info)
+            if redirected:
+                print(f"  Re-querying {len(redirected)} redirected repos...")
+                redir_batches = [redirected[i:i + BATCH_SIZE] for i in range(0, len(redirected), BATCH_SIZE)]
+                for rb in redir_batches:
+                    time.sleep(GQL_DELAY)
+                    query = build_graphql_query(rb)
+                    data, _errors = github_graphql(query, token)
+                    repos = process_batch_result(data, rb)
+                    if repos:
+                        all_repos.extend(repos)
+                        print(f"    Recovered {len(repos)} renamed repos", flush=True)
+            dead = len(to_resolve) - len(redirected)
+            if dead:
+                print(f"  {dead} repos truly gone (deleted or private)")
 
     # Step 5b: Recursive awesome list discovery
     print("\nDiscovering nested awesome lists...")
     depth = 2
     while depth <= MAX_CRAWL_DEPTH:
-        candidates = []
+        potential = []
         for r in all_repos:
             fn_lower = r["full_name"].lower()
             if fn_lower in crawled_as_list:
@@ -567,14 +670,25 @@ def main():
             is_awesome = r.get("is_awesome_list", False)
             if not is_awesome and not looks_like_awesome_list(r.get("name", ""), r["full_name"]):
                 continue
-            subreadme = fetch_repo_readme(r["full_name"], token)
-            if not subreadme or not has_awesome_badge(subreadme):
-                r["is_awesome_list"] = False
-                time.sleep(REST_DELAY)
-                continue
-            r["is_awesome_list"] = True
-            candidates.append((r, subreadme))
-            time.sleep(REST_DELAY)
+            potential.append(r)
+
+        if not potential:
+            print(f"  No candidates at depth {depth}")
+            break
+
+        # Fetch READMEs in parallel
+        def _fetch_candidate_readme(repo):
+            subreadme = fetch_repo_readme(repo["full_name"], token)
+            return repo, subreadme
+
+        candidates = []
+        with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
+            for r, subreadme in pool.map(_fetch_candidate_readme, potential):
+                if not subreadme or not has_awesome_badge(subreadme):
+                    r["is_awesome_list"] = False
+                    continue
+                r["is_awesome_list"] = True
+                candidates.append((r, subreadme))
 
         if not candidates:
             print(f"  No new awesome lists at depth {depth}")
@@ -609,16 +723,39 @@ def main():
 
         print(f"  {len(new_unique)} new repos to fetch")
         total_new = (len(new_unique) + BATCH_SIZE - 1) // BATCH_SIZE
+        new_batches = []
         for bn in range(total_new):
             start = bn * BATCH_SIZE
-            batch = new_unique[start:start + BATCH_SIZE]
-            print(f"    Batch {bn + 1}/{total_new} ({len(batch)} repos)...", flush=True)
-            query = build_graphql_query(batch)
-            data = github_graphql(query, token)
-            repos = process_batch_result(data, batch)
-            all_repos.extend(repos)
-            if bn < total_new - 1:
+            new_batches.append((bn, new_unique[start:start + BATCH_SIZE]))
+
+        new_gql_results = [None] * total_new
+        with ThreadPoolExecutor(max_workers=GQL_WORKERS) as pool:
+            futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in new_batches}
+            for future in as_completed(futures):
+                bn, batch, repos, failed, missed = future.result()
+                new_gql_results[bn] = repos
+                all_missed.extend(missed)
+                label = "FAILED" if failed else f"{len(repos)} repos"
+                print(f"    Batch {bn + 1}/{total_new} done ({label})", flush=True)
+
+        for attempt in range(1, BATCH_RETRIES + 1):
+            failed_indices = [i for i, r in enumerate(new_gql_results) if r is not None and len(r) == 0]
+            retry_batches = [(i, new_batches[i][1]) for i in failed_indices if len(new_batches[i][1]) > 0]
+            if not retry_batches:
+                break
+            print(f"    Retrying {len(retry_batches)} failed batches (attempt {attempt}/{BATCH_RETRIES})...", flush=True)
+            for idx, batch in retry_batches:
                 time.sleep(GQL_DELAY)
+                query = build_graphql_query(batch)
+                data, _errors = github_graphql(query, token)
+                repos = process_batch_result(data, batch)
+                if repos:
+                    new_gql_results[idx] = repos
+                    print(f"      Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
+
+        for repos in new_gql_results:
+            if repos:
+                all_repos.extend(repos)
 
         depth += 1
 
@@ -669,7 +806,7 @@ def main():
             "is_awesome_list": meta.get("is_awesome_list", False),
             "tier": "official",
             "subcategory_count": len(cat_subcats.get(cid, set())),
-            "top_languages": [{"name": l, "count": c} for l, c in top_langs],
+            "top_languages": [{"name": name, "count": c} for name, c in top_langs],
         })
     categories.sort(key=lambda c: c["name"])
 
@@ -701,7 +838,7 @@ def main():
 
     output = {
         "meta": {
-            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(UTC).isoformat(),
             "total_repos": len(all_repos),
             "total_resources": len(unique_resources),
             "source": f"https://github.com/{MASTER_LIST}",
@@ -714,7 +851,7 @@ def main():
     }
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w") as f:
+    with OUTPUT_PATH.open("w") as f:
         json.dump(output, f, separators=(",", ":"))
 
     size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024

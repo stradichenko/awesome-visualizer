@@ -22,28 +22,11 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import HEALTH_BUCKETS, STAR_BUCKETS
+
 REPO_DATA = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
 VIZ_OUTPUT = Path(__file__).resolve().parent.parent / "site" / "data" / "viz-data.json"
-
-# Health histogram buckets: label, min, max (inclusive)
-HEALTH_BUCKETS = [
-    ("0-19", 0, 19),
-    ("20-39", 20, 39),
-    ("40-59", 40, 59),
-    ("60-79", 60, 79),
-    ("80-100", 80, 100),
-]
-
-# Star range buckets
-STAR_BUCKETS = [
-    ("0-100", 0, 100),
-    ("101-500", 101, 500),
-    ("501-1k", 501, 1000),
-    ("1k-5k", 1001, 5000),
-    ("5k-10k", 5001, 10000),
-    ("10k-50k", 10001, 50000),
-    ("50k+", 50001, float("inf")),
-]
 
 MAX_LANGUAGES = 15
 MAX_LICENSES = 10
@@ -202,13 +185,131 @@ def compute_resource_counts(resources, categories):
     return result[:20]
 
 
+def compute_creation_year_histogram(repos):
+    """Count repos by creation year (maturity timeline)."""
+    year_counts = Counter()
+    for r in repos:
+        created = r.get("last_push", "")  # fallback; createdAt not always present
+        # Prefer createdAt if available
+        ca = r.get("createdAt", r.get("created_at", ""))
+        if ca:
+            created = ca
+        if created and len(created) >= 4:
+            try:
+                year = int(created[:4])
+                if 2005 <= year <= 2030:
+                    year_counts[year] += 1
+            except ValueError:
+                pass
+
+    result = []
+    if year_counts:
+        for year in range(min(year_counts), max(year_counts) + 1):
+            result.append({"label": str(year), "count": year_counts.get(year, 0)})
+    return result
+
+
+def compute_activity_distribution(repos):
+    """Count repos by commits_90d ranges."""
+    buckets = [
+        ("0", 0, 0),
+        ("1-5", 1, 5),
+        ("6-20", 6, 20),
+        ("21-50", 21, 50),
+        ("51-100", 51, 100),
+        ("100+", 101, float("inf")),
+    ]
+    counts = {label: 0 for label, _, _ in buckets}
+    for r in repos:
+        c90 = r.get("commits_90d", 0)
+        for label, lo, hi in buckets:
+            if lo <= c90 <= hi:
+                counts[label] += 1
+                break
+    return [{"label": label, "count": counts[label]} for label, _, _ in buckets]
+
+
+def compute_fork_star_ratio(repos):
+    """Fork-to-star ratio distribution (collaboration signal)."""
+    buckets = [
+        ("< 1%", 0, 0.01),
+        ("1-5%", 0.01, 0.05),
+        ("5-10%", 0.05, 0.10),
+        ("10-25%", 0.10, 0.25),
+        ("25-50%", 0.25, 0.50),
+        ("> 50%", 0.50, float("inf")),
+    ]
+    counts = {label: 0 for label, _, _ in buckets}
+    for r in repos:
+        stars = r.get("stars", 0)
+        forks = r.get("forks", 0)
+        ratio = forks / stars if stars > 0 else 0
+        for label, lo, hi in buckets:
+            if lo <= ratio < hi:
+                counts[label] += 1
+                break
+    return [{"label": label, "count": counts[label]} for label, _, _ in buckets]
+
+
+def compute_percentile_thresholds(repos):
+    """Compute percentile thresholds for key metrics.
+
+    Returns a dict of metric -> list of {pct, value} entries.
+    Frontend can use this to show "top X% by stars" badges.
+    """
+    metrics = {
+        "stars": [],
+        "health": [],
+        "commits_90d": [],
+        "forks": [],
+    }
+    for r in repos:
+        for key in metrics:
+            metrics[key].append(r.get(key, 0))
+
+    percentiles = [50, 75, 90, 95, 99]
+    result = {}
+    for key, values in metrics.items():
+        values.sort()
+        n = len(values)
+        if n == 0:
+            result[key] = []
+            continue
+        thresholds = []
+        for p in percentiles:
+            idx = min(int(n * p / 100), n - 1)
+            thresholds.append({"pct": p, "value": values[idx]})
+        result[key] = thresholds
+    return result
+
+
+def compute_topic_cooccurrence(repos):
+    """Compute which topics frequently appear together.
+
+    Returns top topic pairs by co-occurrence count.
+    """
+    pair_counts = Counter()
+    for r in repos:
+        topics = sorted(set(r.get("topics", [])))
+        for i in range(len(topics)):
+            for j in range(i + 1, len(topics)):
+                pair_counts[(topics[i], topics[j])] += 1
+
+    result = []
+    for (t1, t2), count in pair_counts.most_common(50):
+        if count < 3:
+            break
+        result.append({"topics": [t1, t2], "count": count})
+    return result
+
+
 def main():
     if not REPO_DATA.exists():
         print(f"Error: {REPO_DATA} not found. Run fetch_data.py first.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Reading {REPO_DATA}...")
-    with open(REPO_DATA) as f:
+    with REPO_DATA.open() as f:
         data = json.load(f)
 
     repos = data.get("repos", [])
@@ -248,8 +349,25 @@ def main():
         res_by_cat = compute_resource_counts(resources, categories)
         print(f"  {len(res_by_cat)} categories with resources")
 
+    print("Computing creation year histogram...")
+    creation_hist = compute_creation_year_histogram(repos)
+    print(f"  {len(creation_hist)} year buckets")
+
+    print("Computing activity distribution...")
+    activity_dist = compute_activity_distribution(repos)
+
+    print("Computing fork/star ratio...")
+    fork_star = compute_fork_star_ratio(repos)
+
+    print("Computing percentile thresholds...")
+    percentiles = compute_percentile_thresholds(repos)
+
+    print("Computing topic co-occurrence...")
+    topic_cooc = compute_topic_cooccurrence(repos)
+    print(f"  {len(topic_cooc)} topic pairs")
+
     viz = {
-        "version": 1,
+        "version": 3,
         "total_repos": len(repos),
         "total_resources": len(resources),
         "language_distribution": lang_dist,
@@ -259,10 +377,19 @@ def main():
         "license_distribution": lic_dist,
         "health_by_language": health_lang,
         "resource_counts": res_by_cat,
+        "creation_year_histogram": creation_hist,
+        "activity_distribution": activity_dist,
+        "fork_star_ratio": fork_star,
+        "percentile_thresholds": percentiles,
+        "topic_cooccurrence": topic_cooc,
+        "bucket_definitions": {
+            "health": [{"label": label, "min": lo, "max": hi} for label, lo, hi in HEALTH_BUCKETS],
+            "stars": [{"label": label, "min": lo, "max": hi if hi != float("inf") else None} for label, lo, hi in STAR_BUCKETS],
+        },
     }
 
     VIZ_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    with open(VIZ_OUTPUT, "w") as f:
+    with VIZ_OUTPUT.open("w") as f:
         json.dump(viz, f, separators=(",", ":"))
 
     size_kb = VIZ_OUTPUT.stat().st_size / 1024

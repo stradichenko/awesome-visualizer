@@ -25,6 +25,20 @@
     var searchMeta = null;
     var vizData = null;
 
+    // Lazy loading state per tier
+    var TIER_FILES = {
+        official:     { repos: "data/repos-official.json",     resources: "data/resources-official.json" },
+        unofficial:   { repos: "data/repos-unofficial.json",   resources: "data/resources-unofficial.json" },
+        noncanonical: { repos: "data/repos-noncanonical.json", resources: "data/resources-noncanonical.json" }
+    };
+    var tierLoaded   = { official: false, unofficial: false, noncanonical: false };
+    var tierLoading  = { official: null,  unofficial: null,  noncanonical: null };
+    var resLoaded    = { official: false, unofficial: false, noncanonical: false };
+    var resLoading   = { official: null,  unofficial: null,  noncanonical: null };
+
+    // Category-id to tier key lookup (built from index.json)
+    var catTierMap = {};
+
     // --------------------------------------------------------- Table columns
     var TABLE_COLUMNS = [
         { id: "name", label: "Repository", sortKey: "name" },
@@ -132,8 +146,6 @@
         els.filterHealth = document.getElementById("filter-health");
         els.sortSelect = document.getElementById("sort-select");
         els.overviewSearchInput = document.getElementById("overview-search-input");
-        els.overviewFilterLanguage = document.getElementById("overview-filter-language");
-        els.overviewFilterHealth = document.getElementById("overview-filter-health");
         els.resourceFilterSubcategory = document.getElementById("resource-filter-subcategory");
     }
 
@@ -148,19 +160,24 @@
 
     // -------------------------------------------------------------- Data load
     function loadData() {
-        els["overview-grid"].innerHTML = '<div class="av-loading">Loading repository data...</div>';
+        els["overview-grid"].innerHTML = '<div class="av-loading">Loading...</div>';
 
-        fetch("data/repos.json")
+        fetch("data/index.json")
             .then(function (r) {
                 if (!r.ok) throw new Error("Failed to load data");
                 return r.json();
             })
             .then(function (data) {
                 allData = data;
-                state.repos = data.repos || [];
+                allData.repos = [];
+                allData.resources = [];
                 buildCategoryMap(data.categories || []);
                 buildCategoryMap(data.unofficial_categories || []);
                 buildCategoryMap(data.non_canonical_categories || []);
+                // Build catTierMap so we can resolve a category's tier
+                (data.categories || []).forEach(function (c) { catTierMap[c.id] = "official"; });
+                (data.unofficial_categories || []).forEach(function (c) { catTierMap[c.id] = "unofficial"; });
+                (data.non_canonical_categories || []).forEach(function (c) { catTierMap[c.id] = "noncanonical"; });
                 updateGlobalStats(data);
                 restoreFromHash();
                 if (state.screen === "detail" && state.category !== "all") {
@@ -170,10 +187,70 @@
                 }
                 loadSearchMeta();
                 loadVizData();
+                // Prefetch official tier repos in background (default open segment)
+                ensureTierRepos("official").then(function () { updateLiveStats(); });
             })
             .catch(function () {
-                els["overview-grid"].innerHTML = '<div class="av-empty"><div class="av-empty-title">Could not load data</div><p>Run the data pipeline or check data/repos.json</p></div>';
+                els["overview-grid"].innerHTML = '<div class="av-empty"><div class="av-empty-title">Could not load data</div><p>Run the data pipeline or check data/index.json</p></div>';
             });
+    }
+
+    // ------------------------------------------------ Lazy tier repo loading
+    function ensureTierRepos(tier) {
+        if (tierLoaded[tier]) return Promise.resolve();
+        if (tierLoading[tier]) return tierLoading[tier];
+        tierLoading[tier] = fetch(TIER_FILES[tier].repos)
+            .then(function (r) {
+                if (!r.ok) throw new Error("Failed to load " + tier + " repos");
+                return r.json();
+            })
+            .then(function (repos) {
+                for (var i = 0; i < repos.length; i++) {
+                    state.repos.push(repos[i]);
+                }
+                tierLoaded[tier] = true;
+                tierLoading[tier] = null;
+                searchTokens = null; // invalidate search index
+            })
+            .catch(function () {
+                tierLoading[tier] = null;
+            });
+        return tierLoading[tier];
+    }
+
+    function ensureTierResources(tier) {
+        if (resLoaded[tier]) return Promise.resolve();
+        if (resLoading[tier]) return resLoading[tier];
+        resLoading[tier] = fetch(TIER_FILES[tier].resources)
+            .then(function (r) {
+                if (!r.ok) throw new Error("Failed to load " + tier + " resources");
+                return r.json();
+            })
+            .then(function (resources) {
+                allData.resources = allData.resources.concat(resources);
+                resLoaded[tier] = true;
+                resLoading[tier] = null;
+            })
+            .catch(function () {
+                resLoading[tier] = null;
+            });
+        return resLoading[tier];
+    }
+
+    function ensureAllTiers() {
+        return Promise.all([
+            ensureTierRepos("official"),
+            ensureTierRepos("unofficial"),
+            ensureTierRepos("noncanonical")
+        ]);
+    }
+
+    function ensureAllResources() {
+        return Promise.all([
+            ensureTierResources("official"),
+            ensureTierResources("unofficial"),
+            ensureTierResources("noncanonical")
+        ]);
     }
 
     // --------------------------------------------------------- Search meta
@@ -190,6 +267,8 @@
     }
 
     // ---------------------------------------------------------- Viz data
+    var percentileThresholds = {};
+
     function loadVizData() {
         fetch("data/viz-data.json")
             .then(function (r) {
@@ -199,6 +278,16 @@
             .then(function (data) {
                 if (data) {
                     vizData = data;
+                    // Load bucket definitions from backend if available
+                    if (data.bucket_definitions) {
+                        if (data.bucket_definitions.health) bucketDefs.health = data.bucket_definitions.health;
+                        if (data.bucket_definitions.stars) {
+                            bucketDefs.stars = data.bucket_definitions.stars.map(function (b) {
+                                return { label: b.label, min: b.min, max: b.max === null ? Infinity : b.max };
+                            });
+                        }
+                    }
+                    if (data.percentile_thresholds) percentileThresholds = data.percentile_thresholds;
                     // Render only if the viz section is currently visible
                     var vizSection = els["viz-section"];
                     if (vizSection && !vizSection.hidden && state.screen === "overview") {
@@ -207,6 +296,16 @@
                 }
             })
             .catch(function () { /* viz is optional, fail silently */ });
+    }
+
+    function getPercentile(metric, value) {
+        var thresholds = percentileThresholds[metric];
+        if (!thresholds || thresholds.length === 0) return 0;
+        var pct = 0;
+        for (var i = 0; i < thresholds.length; i++) {
+            if (value >= thresholds[i].value) pct = thresholds[i].pct;
+        }
+        return pct;
     }
 
     function renderViz() {
@@ -252,6 +351,26 @@
         }
     }
 
+    // Default bucket definitions (overridden by viz-data.json if available)
+    var bucketDefs = {
+        health: [
+            { label: "0-19", min: 0, max: 19 },
+            { label: "20-39", min: 20, max: 39 },
+            { label: "40-59", min: 40, max: 59 },
+            { label: "60-79", min: 60, max: 79 },
+            { label: "80-100", min: 80, max: 100 }
+        ],
+        stars: [
+            { label: "0-100", min: 0, max: 100 },
+            { label: "101-500", min: 101, max: 500 },
+            { label: "501-1k", min: 501, max: 1000 },
+            { label: "1k-5k", min: 1001, max: 5000 },
+            { label: "5k-10k", min: 5001, max: 10000 },
+            { label: "10k-50k", min: 10001, max: 50000 },
+            { label: "50k+", min: 50001, max: Infinity }
+        ]
+    };
+
     function renderDetailViz(catId) {
         if (typeof AVCharts === "undefined") return;
 
@@ -283,16 +402,12 @@
             AVCharts.donut(langContainer, langData, { centerLabel: "repos" });
         }
 
-        // Health histogram
+        // Health histogram (uses shared bucket definitions)
         var healthContainer = els["detail-viz-health-hist"];
         if (healthContainer) {
-            var healthBuckets = [
-                { label: "0-19", min: 0, max: 19, count: 0 },
-                { label: "20-39", min: 20, max: 39, count: 0 },
-                { label: "40-59", min: 40, max: 59, count: 0 },
-                { label: "60-79", min: 60, max: 79, count: 0 },
-                { label: "80-100", min: 80, max: 100, count: 0 }
-            ];
+            var healthBuckets = bucketDefs.health.map(function (b) {
+                return { label: b.label, min: b.min, max: b.max, count: 0 };
+            });
             for (var hi = 0; hi < catRepos.length; hi++) {
                 var h = catRepos[hi].health || 0;
                 for (var hb = 0; hb < healthBuckets.length; hb++) {
@@ -307,18 +422,12 @@
             AVCharts.bar(healthContainer, histData);
         }
 
-        // Star buckets
+        // Star buckets (uses shared bucket definitions)
         var starContainer = els["detail-viz-star-buckets"];
         if (starContainer) {
-            var starBuckets = [
-                { label: "0-100", min: 0, max: 100, count: 0 },
-                { label: "101-500", min: 101, max: 500, count: 0 },
-                { label: "501-1k", min: 501, max: 1000, count: 0 },
-                { label: "1k-5k", min: 1001, max: 5000, count: 0 },
-                { label: "5k-10k", min: 5001, max: 10000, count: 0 },
-                { label: "10k-50k", min: 10001, max: 50000, count: 0 },
-                { label: "50k+", min: 50001, max: Infinity, count: 0 }
-            ];
+            var starBuckets = bucketDefs.stars.map(function (b) {
+                return { label: b.label, min: b.min, max: b.max === null ? Infinity : b.max, count: 0 };
+            });
             for (var si = 0; si < catRepos.length; si++) {
                 var stars = catRepos[si].stars || 0;
                 for (var sb = 0; sb < starBuckets.length; sb++) {
@@ -390,20 +499,31 @@
     }
 
     // ------------------------------------------------ Overview filter state
-    var overviewState = {
-        language: "all",
-        minHealth: 0
+    // ------------------------------------------------ Segment definitions
+    var SEGMENTS = {
+        official:     { dataKey: "categories",                gridRef: "overview-grid",     sectionRef: "segment-official" },
+        unofficial:   { dataKey: "unofficial_categories",     gridRef: "unofficial-grid",   sectionRef: "segment-unofficial" },
+        noncanonical: { dataKey: "non_canonical_categories",  gridRef: "noncanonical-grid", sectionRef: "segment-noncanonical" }
     };
 
-    function populateOverviewFilters() {
-        var sel = els.overviewFilterLanguage;
+    var segmentFilters = {
+        official:     { language: "all", minHealth: 0 },
+        unofficial:   { language: "all", minHealth: 0 },
+        noncanonical: { language: "all", minHealth: 0 }
+    };
+
+    function populateSegmentLanguages(segKey) {
+        var sel = document.getElementById(segKey + "-filter-language");
         if (!sel) return;
         while (sel.options.length > 1) sel.remove(1);
 
+        var cats = (allData && allData[SEGMENTS[segKey].dataKey]) || [];
         var langCounts = {};
-        for (var i = 0; i < state.repos.length; i++) {
-            var lang = state.repos[i].language;
-            if (lang) langCounts[lang] = (langCounts[lang] || 0) + 1;
+        for (var c = 0; c < cats.length; c++) {
+            var topLangs = cats[c].top_languages || [];
+            for (var l = 0; l < topLangs.length; l++) {
+                langCounts[topLangs[l].name] = (langCounts[topLangs[l].name] || 0) + topLangs[l].count;
+            }
         }
         var langs = Object.keys(langCounts).sort(function (a, b) {
             return langCounts[b] - langCounts[a];
@@ -416,21 +536,33 @@
         }
     }
 
-    function renderFilteredOverview() {
-        var cats = (allData && allData.categories) || [];
-        var grid = els["overview-grid"];
+    function renderSegment(segKey) {
+        var seg = SEGMENTS[segKey];
+        var cats = (allData && allData[seg.dataKey]) || [];
+        var grid = els[seg.gridRef];
+        if (!grid) return;
         grid.textContent = "";
 
+        // Hide entire toggle + section when segment has no data at all
+        var toggleBtn = document.querySelector("[aria-controls='" + seg.sectionRef + "']");
+        if (!cats.length) {
+            if (toggleBtn) toggleBtn.hidden = true;
+            if (els[seg.sectionRef]) els[seg.sectionRef].hidden = true;
+            return;
+        }
+        if (toggleBtn) toggleBtn.hidden = false;
+
+        var f = segmentFilters[segKey];
         var filtered = cats;
-        if (overviewState.language !== "all") {
+        if (f.language !== "all") {
             filtered = filtered.filter(function (cat) {
                 var topLangs = cat.top_languages || [];
-                return topLangs.some(function (l) { return l.name === overviewState.language; });
+                return topLangs.some(function (l) { return l.name === f.language; });
             });
         }
-        if (overviewState.minHealth > 0) {
+        if (f.minHealth > 0) {
             filtered = filtered.filter(function (cat) {
-                return (cat.avg_health || 0) >= overviewState.minHealth;
+                return (cat.avg_health || 0) >= f.minHealth;
             });
         }
 
@@ -443,65 +575,69 @@
             frag.appendChild(createCategoryCard(filtered[i]));
         }
         grid.appendChild(frag);
-        renderUnofficial();
-        renderNonCanonical();
     }
 
-    function renderTierSection(dataKey, sectionRef, gridRef) {
-        var cats = (allData && allData[dataKey]) || [];
-        var section = els[sectionRef];
-        var grid = els[gridRef];
-        if (!section || !grid) return;
-
-        if (!cats.length) {
-            section.hidden = true;
-            return;
+    function updateSegmentCounts() {
+        var keys = ["official", "unofficial", "noncanonical"];
+        for (var k = 0; k < keys.length; k++) {
+            var seg = SEGMENTS[keys[k]];
+            var cats = (allData && allData[seg.dataKey]) || [];
+            var countEl = els[keys[k] + "-count"];
+            if (countEl) countEl.textContent = cats.length ? cats.length + " lists" : "";
         }
-
-        var filtered = cats;
-        if (overviewState.language !== "all") {
-            filtered = filtered.filter(function (cat) {
-                var topLangs = cat.top_languages || [];
-                return topLangs.some(function (l) { return l.name === overviewState.language; });
-            });
-        }
-        if (overviewState.minHealth > 0) {
-            filtered = filtered.filter(function (cat) {
-                return (cat.avg_health || 0) >= overviewState.minHealth;
-            });
-        }
-
-        grid.textContent = "";
-        if (!filtered.length) {
-            section.hidden = true;
-            return;
-        }
-        var frag = document.createDocumentFragment();
-        for (var i = 0; i < filtered.length; i++) {
-            frag.appendChild(createCategoryCard(filtered[i]));
-        }
-        grid.appendChild(frag);
-        section.hidden = false;
-    }
-
-    function renderUnofficial() {
-        renderTierSection("unofficial_categories", "unofficial-section", "unofficial-grid");
-    }
-
-    function renderNonCanonical() {
-        renderTierSection("non_canonical_categories", "noncanonical-section", "noncanonical-grid");
     }
 
     // ----------------------------------------------------------- Global stats
     function updateGlobalStats(data) {
         var meta = data.meta || {};
-        els["stat-total"].textContent = formatNum(meta.total_repos || state.repos.length);
+        var tc = meta.tier_counts || {};
+        els["stat-total"].textContent = formatNum(meta.total_repos || 0);
         els["stat-categories"].textContent =
             (data.categories || []).length +
             (data.unofficial_categories || []).length +
             (data.non_canonical_categories || []).length;
-        els["stat-resources"].textContent = formatNum(meta.total_resources || (data.resources || []).length);
+        els["stat-resources"].textContent = formatNum(meta.total_resources || 0);
 
+        // avg health and active count are deferred until repos load
+        els["stat-avg-health"].textContent = "-";
+        els["stat-active"].textContent = "-";
+
+        if (meta.last_updated) {
+            els["last-updated"].textContent = "Updated " + relativeTime(meta.last_updated);
+        }
+
+        // Tier breakdown table - use pre-computed counts from meta
+        var tiers = [
+            { label: "Official",       cats: (data.categories || []).length,               repos: tc.official || 0 },
+            { label: "Unofficial",     cats: (data.unofficial_categories || []).length,     repos: tc.unofficial || 0 },
+            { label: "Non-canonical",  cats: (data.non_canonical_categories || []).length,  repos: tc.noncanonical || 0 }
+        ];
+        var tbody = els["tier-summary-body"];
+        if (tbody) {
+            tbody.textContent = "";
+            var totalCats = 0, totalRepos = 0;
+            for (var ti = 0; ti < tiers.length; ti++) {
+                totalCats += tiers[ti].cats;
+                totalRepos += tiers[ti].repos;
+                var tr = document.createElement("tr");
+                var th = document.createElement("th");
+                th.scope = "row";
+                th.textContent = tiers[ti].label;
+                tr.appendChild(th);
+                var tdCats = document.createElement("td");
+                tdCats.textContent = formatNum(tiers[ti].cats);
+                tr.appendChild(tdCats);
+                var tdRepos = document.createElement("td");
+                tdRepos.textContent = formatNum(tiers[ti].repos);
+                tr.appendChild(tdRepos);
+                tbody.appendChild(tr);
+            }
+            if (els["tier-total-cats"]) els["tier-total-cats"].textContent = formatNum(totalCats);
+            if (els["tier-total-repos"]) els["tier-total-repos"].textContent = formatNum(totalRepos);
+        }
+    }
+
+    function updateLiveStats() {
         var totalHealth = 0;
         var activeCount = 0;
         for (var i = 0; i < state.repos.length; i++) {
@@ -511,10 +647,6 @@
         var avgHealth = state.repos.length ? Math.round(totalHealth / state.repos.length) : 0;
         els["stat-avg-health"].textContent = avgHealth;
         els["stat-active"].textContent = formatNum(activeCount);
-
-        if (meta.last_updated) {
-            els["last-updated"].textContent = "Updated " + relativeTime(meta.last_updated);
-        }
     }
 
     // ------------------------------------------------------- Category map
@@ -539,31 +671,26 @@
         els["overview-screen"].hidden = false;
         els["detail-screen"].hidden = true;
         els.overviewSearchInput.value = "";
-        overviewState.language = "all";
-        overviewState.minHealth = 0;
-        if (els.overviewFilterLanguage) els.overviewFilterLanguage.value = "all";
-        if (els.overviewFilterHealth) els.overviewFilterHealth.value = "0";
         clearOverviewSearch();
-        populateOverviewFilters();
+        // Reset segment filters
+        var keys = ["official", "unofficial", "noncanonical"];
+        for (var k = 0; k < keys.length; k++) {
+            segmentFilters[keys[k]] = { language: "all", minHealth: 0 };
+            var langSel = document.getElementById(keys[k] + "-filter-language");
+            var healthSel = document.getElementById(keys[k] + "-filter-health");
+            if (langSel) langSel.value = "all";
+            if (healthSel) healthSel.value = "0";
+            populateSegmentLanguages(keys[k]);
+        }
         renderOverview();
         saveToHash();
     }
 
     function renderOverview() {
-        var cats = (allData && allData.categories) || [];
-        var grid = els["overview-grid"];
-        grid.textContent = "";
-        if (!cats.length) {
-            grid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No categories found</div></div>';
-            return;
-        }
-        var frag = document.createDocumentFragment();
-        for (var i = 0; i < cats.length; i++) {
-            frag.appendChild(createCategoryCard(cats[i]));
-        }
-        grid.appendChild(frag);
-        renderUnofficial();
-        renderNonCanonical();
+        renderSegment("official");
+        renderSegment("unofficial");
+        renderSegment("noncanonical");
+        updateSegmentCounts();
     }
 
     function createCategoryCard(cat) {
@@ -585,7 +712,7 @@
                 esc(topLangs[i].name) + '</span>';
         }
 
-        var resCount = getCategoryResources(cat.id).length;
+        var resCount = cat.resource_count || 0;
         var resHtml = resCount > 0 ?
             '<span class="av-catcard-count av-catcard-count--res">' +
                 '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> ' +
@@ -630,6 +757,28 @@
             els["detail-source"].hidden = true;
         }
 
+        if (!skipHash) saveToHash();
+
+        // Determine which tier this category belongs to and lazy-load
+        var tier = catTierMap[catId] || "official";
+        var reposReady = tierLoaded[tier];
+        var resourcesReady = resLoaded[tier];
+
+        if (reposReady && resourcesReady) {
+            renderDetail(catId);
+        } else {
+            // Show loading state in the detail grid
+            var detailGrid = els["detail-grid"];
+            if (detailGrid) detailGrid.innerHTML = '<div class="av-loading">Loading repos...</div>';
+
+            Promise.all([ensureTierRepos(tier), ensureTierResources(tier)]).then(function () {
+                // Only render if we're still looking at this category
+                if (state.category === catId) renderDetail(catId);
+            });
+        }
+    }
+
+    function renderDetail(catId) {
         // Detail stats
         var catRepos = [];
         var detailLangs = {};
@@ -685,8 +834,6 @@
             if (chevron) chevron.classList.add("av-viz-toggle-chevron--open");
         }
         renderDetailViz(catId);
-
-        if (!skipHash) saveToHash();
     }
 
     // -------------------------------------------------------------- Search
@@ -715,10 +862,33 @@
         if (!searchTokens) buildSearchIndex();
         if (!query) return state.repos.slice();
 
+        var MAX_RESULTS = 1000;
+
         // & is explicit AND (same as space)
         var normalized = query.replace(/&/g, " ");
         // Split on | for OR groups
         var orGroups = normalized.split("|");
+
+        // Pre-compile regex patterns per OR group (O2 fix)
+        var compiledGroups = [];
+        for (var g = 0; g < orGroups.length; g++) {
+            var terms = orGroups[g].trim().toLowerCase().split(/\s+/).filter(Boolean);
+            if (terms.length === 0) continue;
+            var patterns = [];
+            for (var t = 0; t < terms.length; t++) {
+                var pattern = terms[t]
+                    .replace(/[.+?^${}()[\]\\]/g, "\\$&")
+                    .replace(/\*/g, ".*");
+                try {
+                    patterns.push({ re: new RegExp(pattern), raw: terms[t] });
+                } catch (e) {
+                    patterns.push({ re: null, raw: terms[t] });
+                }
+            }
+            compiledGroups.push(patterns);
+        }
+        if (compiledGroups.length === 0) return state.repos.slice();
+
         var scored = [];
 
         for (var i = 0; i < state.repos.length; i++) {
@@ -726,29 +896,19 @@
             var matched = false;
             var matchScore = 0;
 
-            for (var g = 0; g < orGroups.length; g++) {
-                var terms = orGroups[g].trim().toLowerCase().split(/\s+/).filter(Boolean);
-                if (terms.length === 0) continue;
+            for (var cg = 0; cg < compiledGroups.length; cg++) {
+                var group = compiledGroups[cg];
                 var allMatch = true;
                 var groupScore = 0;
 
-                for (var t = 0; t < terms.length; t++) {
-                    // Escape regex specials except *, convert * to .*
-                    var pattern = terms[t]
-                        .replace(/[.+?^${}()[\]\\]/g, "\\$&")
-                        .replace(/\*/g, ".*");
-                    try {
-                        if (!new RegExp(pattern).test(haystack)) {
-                            allMatch = false;
-                            break;
-                        }
-                    } catch (e) {
-                        if (haystack.indexOf(terms[t]) === -1) {
-                            allMatch = false;
-                            break;
-                        }
+                for (var p = 0; p < group.length; p++) {
+                    var entry = group[p];
+                    if (entry.re) {
+                        if (!entry.re.test(haystack)) { allMatch = false; break; }
+                    } else {
+                        if (haystack.indexOf(entry.raw) === -1) { allMatch = false; break; }
                     }
-                    groupScore += computeTermScore(state.repos[i], terms[t]);
+                    groupScore += computeTermScore(state.repos[i], entry.raw);
                 }
 
                 if (allMatch) {
@@ -757,7 +917,11 @@
                 }
             }
 
-            if (matched) scored.push({ repo: state.repos[i], score: matchScore });
+            if (matched) {
+                scored.push({ repo: state.repos[i], score: matchScore });
+                // Early-exit: stop collecting after MAX_RESULTS (O1 fix)
+                if (scored.length >= MAX_RESULTS) break;
+            }
         }
 
         // Sort by relevance score descending, then by stars as tiebreaker
@@ -884,13 +1048,29 @@
             catBadge = '<span class="av-card-category">' + esc(categoryName(repo.category)) + '</span>';
         }
 
+        var topicHtml = "";
+        var topics = repo.topics || [];
+        if (topics.length > 0) {
+            topicHtml = '<div class="av-card-topics">';
+            for (var ti = 0; ti < topics.length; ti++) {
+                topicHtml += '<button type="button" class="av-topic-pill" data-action="filter-topic" data-topic="' + escAttr(topics[ti]) + '">' + esc(topics[ti]) + '</button>';
+            }
+            topicHtml += '</div>';
+        }
+
+        var starPct = getPercentile("stars", repo.stars);
+        var pctBadge = "";
+        if (starPct >= 90) pctBadge = '<span class="av-pct-badge" title="Top ' + (100 - starPct) + '% by stars">p' + starPct + '</span>';
+
         card.innerHTML =
             '<header class="av-card-header">' +
                 (langColor ? '<span class="av-lang-dot" style="--lang-color:' + langColor + '"></span>' : '') +
                 '<a href="https://github.com/' + escAttr(repo.full_name) + '" class="av-card-title" target="_blank" rel="noopener">' + esc(repo.name) + '</a>' +
                 '<span class="av-card-owner">' + esc(repo.owner) + '</span>' +
+                pctBadge +
             '</header>' +
             '<p class="av-card-desc">' + esc(repo.description) + '</p>' +
+            topicHtml +
             '<footer class="av-card-footer">' +
                 '<div class="av-card-metrics">' +
                     metric("icon-star", formatNum(repo.stars)) +
@@ -1219,6 +1399,12 @@
                 if (catId) showDetail(catId);
             } else if (action === "back-overview") {
                 showOverview();
+            } else if (action === "filter-topic") {
+                var topic = btn.getAttribute("data-topic");
+                if (topic) {
+                    els.search.value = topic;
+                    applyAndRender();
+                }
             } else if (action === "toggle-overview-viz" || action === "toggle-detail-viz") {
                 var targetId = btn.getAttribute("aria-controls");
                 var section = document.getElementById(targetId);
@@ -1234,22 +1420,39 @@
                     if (action === "toggle-overview-viz" && vizData) renderViz();
                     if (action === "toggle-detail-viz") renderDetailViz(state.category);
                 }
+            } else if (action === "toggle-segment") {
+                var segId = btn.getAttribute("aria-controls");
+                var segSection = document.getElementById(segId);
+                if (!segSection) return;
+                var segExpanded = btn.getAttribute("aria-expanded") === "true";
+                segSection.hidden = segExpanded;
+                btn.setAttribute("aria-expanded", segExpanded ? "false" : "true");
+                var segChevron = btn.querySelector(".av-segment-chevron");
+                if (segChevron) segChevron.classList.toggle("av-segment-chevron--open", !segExpanded);
+                btn.classList.toggle("av-segment-toggle--open", !segExpanded);
+
+                // Prefetch tier repos when expanding a segment (for fast detail navigation)
+                if (!segExpanded) {
+                    var segTier = segId.replace("segment-", "");
+                    if (TIER_FILES[segTier] && !tierLoaded[segTier]) {
+                        ensureTierRepos(segTier).then(function () { updateLiveStats(); });
+                    }
+                }
             }
         });
 
-        // Overview filters
-        if (els.overviewFilterLanguage) {
-            els.overviewFilterLanguage.addEventListener("change", function () {
-                overviewState.language = this.value;
-                renderFilteredOverview();
-            });
-        }
-        if (els.overviewFilterHealth) {
-            els.overviewFilterHealth.addEventListener("change", function () {
-                overviewState.minHealth = parseInt(this.value, 10) || 0;
-                renderFilteredOverview();
-            });
-        }
+        // Segment filters (delegated)
+        document.addEventListener("change", function (e) {
+            var sel = e.target.closest("[data-action='segment-filter']");
+            if (!sel) return;
+            var segKey = sel.getAttribute("data-segment");
+            if (!segKey || !segmentFilters[segKey]) return;
+            var langSel = document.getElementById(segKey + "-filter-language");
+            var healthSel = document.getElementById(segKey + "-filter-health");
+            segmentFilters[segKey].language = langSel ? langSel.value : "all";
+            segmentFilters[segKey].minHealth = healthSel ? parseInt(healthSel.value, 10) || 0 : 0;
+            renderSegment(segKey);
+        });
 
         // Resource subcategory filter
         if (els.resourceFilterSubcategory) {
@@ -1260,9 +1463,27 @@
                 if (sub !== "all") {
                     resources = resources.filter(function (r) { return r.subcategory === sub; });
                 }
-                renderResourceGrid(resources);
+                currentResources = resources;
+                renderResourceGrid(sortResources(resources, resourceSortKey, resourceSortDir));
                 var countEl = els["resources-count"];
                 if (countEl) countEl.textContent = resources.length + " links";
+            });
+        }
+
+        // Resource table header: sort by click
+        if (els["resources-thead"]) {
+            els["resources-thead"].addEventListener("click", function (e) {
+                var th = e.target.closest("[data-resource-sort]");
+                if (!th) return;
+                var key = th.getAttribute("data-resource-sort");
+                if (resourceSortKey === key) {
+                    resourceSortDir = resourceSortDir === "asc" ? "desc" : "asc";
+                } else {
+                    resourceSortKey = key;
+                    resourceSortDir = "asc";
+                }
+                renderResourceHead();
+                renderResourceGrid(sortResources(currentResources, resourceSortKey, resourceSortDir));
             });
         }
 
@@ -1350,7 +1571,22 @@
                 if (val.length === 0) {
                     clearOverviewSearch();
                 } else {
-                    performOverviewSearch(val);
+                    // Ensure all tier repos + resources are loaded before searching
+                    var allLoaded = tierLoaded.official && tierLoaded.unofficial && tierLoaded.noncanonical;
+                    if (allLoaded) {
+                        performOverviewSearch(val);
+                    } else {
+                        var grid = els["overview-search-results"];
+                        var info = els["overview-search-info"];
+                        grid.innerHTML = '<div class="av-loading">Loading data for search...</div>';
+                        grid.hidden = false;
+                        info.hidden = true;
+                        Promise.all([ensureAllTiers(), ensureAllResources()]).then(function () {
+                            // Re-check the input value hasn't changed
+                            var current = els.overviewSearchInput.value.trim();
+                            if (current.length > 0) performOverviewSearch(current);
+                        });
+                    }
                 }
             }, DEBOUNCE_MS);
         });
@@ -1539,18 +1775,7 @@
     function performOverviewSearch(query) {
         if (!searchTokens) buildSearchIndex();
 
-        var results = search(query);
-        // Apply overview filters to search results
-        if (overviewState.language !== "all") {
-            results = results.filter(function (r) { return r.language === overviewState.language; });
-        }
-        if (overviewState.minHealth > 0) {
-            results = results.filter(function (r) { return (r.health || 0) >= overviewState.minHealth; });
-        }
-        // Show up to 60 results from all categories
-        results = results.slice(0, 60);
-
-        // Also search resources
+        var results = search(query).slice(0, 60);
         var resResults = searchResources(query).slice(0, 20);
 
         var grid = els["overview-search-results"];
@@ -1570,7 +1795,7 @@
                 resHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> Resource Links (' + resResults.length + ')';
                 frag.appendChild(resHeading);
                 for (var j = 0; j < resResults.length; j++) {
-                    frag.appendChild(createResourceCard(resResults[j]));
+                    frag.appendChild(createSearchResourceItem(resResults[j]));
                 }
             }
             grid.appendChild(frag);
@@ -1580,24 +1805,165 @@
         info.textContent = totalCount + " matching results" + (resResults.length ? " (" + results.length + " repos, " + resResults.length + " resources)" : "");
         info.hidden = false;
         grid.hidden = false;
-        els["overview-grid"].hidden = true;
-        if (els["unofficial-section"]) els["unofficial-section"].hidden = true;
-        if (els["noncanonical-section"]) els["noncanonical-section"].hidden = true;
+        // Hide all segments while showing search results
+        var segKeys = ["segment-official", "segment-unofficial", "segment-noncanonical"];
+        for (var s = 0; s < segKeys.length; s++) {
+            if (els[segKeys[s]]) els[segKeys[s]].hidden = true;
+        }
+        var toggleBtns = document.querySelectorAll("[data-action='toggle-segment']");
+        for (var b = 0; b < toggleBtns.length; b++) toggleBtns[b].hidden = true;
+    }
+
+    function createSearchResourceItem(res) {
+        var item = document.createElement("article");
+        item.className = "av-card av-card--resource";
+        item.setAttribute("role", "listitem");
+        var domain = extractDomain(res.url);
+        var desc = cleanResourceDesc(res.description);
+        item.innerHTML =
+            '<div class="av-card-header">' +
+                '<h3 class="av-card-title"><a href="' + escAttr(res.url) + '" target="_blank" rel="noopener noreferrer">' + esc(res.title) + '</a></h3>' +
+            '</div>' +
+            (desc ? '<p class="av-card-desc">' + esc(desc) + '</p>' : '') +
+            '<div class="av-card-footer">' +
+                '<code class="av-card-domain">' + esc(domain) + '</code>' +
+                (res.subcategory ? ' <span class="av-badge av-badge--sub">' + esc(res.subcategory) + '</span>' : '') +
+            '</div>';
+        return item;
     }
 
     function clearOverviewSearch() {
         els["overview-search-results"].hidden = true;
         els["overview-search-results"].textContent = "";
         els["overview-search-info"].hidden = true;
-        els["overview-grid"].hidden = false;
-        renderUnofficial();
-        renderNonCanonical();
+        // Restore segment visibility based on toggle state
+        var toggleBtns = document.querySelectorAll("[data-action='toggle-segment']");
+        for (var b = 0; b < toggleBtns.length; b++) {
+            toggleBtns[b].hidden = false;
+            var segId = toggleBtns[b].getAttribute("aria-controls");
+            var isExpanded = toggleBtns[b].getAttribute("aria-expanded") === "true";
+            var segEl = document.getElementById(segId);
+            if (segEl) segEl.hidden = !isExpanded;
+        }
     }
 
     // ----------------------------------------------------------- Resources
+    var NOISE_TITLE_RE = /^\[?(All Versions|Preprint|Paper|Project|Website|Code|Homepage|Slides|Video|Demo|Blog|Talk|Poster|Dataset|Models?)\]?$/i;
+    var NOISE_RESOURCE_DOMAIN_RE = /scholar\.google\.|img\.shields\.io|awesome\.re/i;
+
     function getCategoryResources(catId) {
         var resources = (allData && allData.resources) || [];
-        return resources.filter(function (r) { return r.category === catId; });
+        return resources.filter(function (r) {
+            if (r.category !== catId) return false;
+            if (NOISE_TITLE_RE.test(r.title)) return false;
+            if (r.title.charAt(0) === "[") return false;
+            if (NOISE_RESOURCE_DOMAIN_RE.test(r.url)) return false;
+            return true;
+        });
+    }
+
+    // Resource table column definitions
+    var resourceColumns = [
+        { id: "title", label: "Title", sortKey: "title" },
+        { id: "description", label: "Description", sortKey: null },
+        { id: "domain", label: "Domain", sortKey: "domain" },
+        { id: "subcategory", label: "Subcategory", sortKey: "subcategory" },
+    ];
+    var resourceSortKey = "title";
+    var resourceSortDir = "asc";
+
+    var NOISE_LINK_RE = /\[(All Versions|Preprint|Paper|Project|Website|Code|Homepage|Slides|Video|Demo|Blog|Talk|Poster|Dataset|Models?)\]\([^)]*\)/gi;
+
+    function cleanResourceDesc(desc) {
+        if (!desc) return "";
+        // Remove noise markdown links entirely before converting links to text
+        desc = desc.replace(NOISE_LINK_RE, "");
+        // Convert remaining markdown links to plain text
+        desc = desc.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+        // Strip bold/italic markers
+        desc = desc.replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1");
+        // Strip underline/strikethrough
+        desc = desc.replace(/_{1,2}([^_]+)_{1,2}/g, "$1");
+        desc = desc.replace(/~~([^~]+)~~/g, "$1");
+        // Remove plain bracket noise phrases like [All Versions] or [Paper]
+        desc = desc.replace(/\[(?:All Versions|Preprint|Paper|Project|Website|Code|Homepage|Slides|Video|Demo|Blog|Talk|Poster|Dataset|Models?|Nature News|web)\]\.?/gi, "");
+        // Collapse orphaned punctuation and extra whitespace
+        desc = desc.replace(/(?:[.,:;]\s*){2,}/g, ". ");
+        desc = desc.replace(/\s{2,}/g, " ");
+        return desc.replace(/^[\s.\-]+|[\s.\-]+$/g, "");
+    }
+    var currentResources = [];
+
+    function extractDomain(url) {
+        try {
+            var a = document.createElement("a");
+            a.href = url;
+            return a.hostname.replace(/^www\./, "");
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function sortResources(resources, key, dir) {
+        var sorted = resources.slice();
+        sorted.sort(function (a, b) {
+            var va, vb;
+            if (key === "domain") {
+                va = extractDomain(a.url).toLowerCase();
+                vb = extractDomain(b.url).toLowerCase();
+            } else if (key === "subcategory") {
+                va = (a.subcategory || "").toLowerCase();
+                vb = (b.subcategory || "").toLowerCase();
+            } else {
+                va = (a.title || "").toLowerCase();
+                vb = (b.title || "").toLowerCase();
+            }
+            if (va < vb) return dir === "asc" ? -1 : 1;
+            if (va > vb) return dir === "asc" ? 1 : -1;
+            return 0;
+        });
+        return sorted;
+    }
+
+    function renderResourceHead() {
+        var headRow = els["resources-thead"];
+        if (!headRow) return;
+        headRow.textContent = "";
+
+        for (var i = 0; i < resourceColumns.length; i++) {
+            var col = resourceColumns[i];
+            var th = document.createElement("th");
+            th.scope = "col";
+
+            if (col.sortKey) {
+                th.classList.add("av-table-th--sortable");
+                th.setAttribute("data-resource-sort", col.sortKey);
+
+                var isSorted = resourceSortKey === col.sortKey;
+                if (isSorted) th.classList.add("av-table-th--sorted");
+
+                var inner = document.createElement("span");
+                inner.className = "av-table-th-inner";
+
+                var label = document.createElement("span");
+                label.className = "av-table-th-label";
+                label.textContent = col.label;
+                inner.appendChild(label);
+
+                var chevron = document.createElement("span");
+                chevron.className = "av-table-sort-chevron";
+                if (isSorted) {
+                    chevron.classList.add(resourceSortDir === "asc" ? "av-table-sort-chevron--asc" : "av-table-sort-chevron--desc");
+                }
+                inner.appendChild(chevron);
+
+                th.appendChild(inner);
+            } else {
+                th.textContent = col.label;
+            }
+
+            headRow.appendChild(th);
+        }
     }
 
     function renderResources(catId) {
@@ -1606,23 +1972,25 @@
         var countEl = els["resources-count"];
         if (!section || !grid) return;
 
-        var resources = getCategoryResources(catId);
+        currentResources = getCategoryResources(catId);
+        resourceSortKey = "title";
+        resourceSortDir = "asc";
 
-        if (!resources.length) {
+        if (!currentResources.length) {
             section.hidden = true;
             return;
         }
 
         section.hidden = false;
-        countEl.textContent = resources.length + " links";
+        countEl.textContent = currentResources.length + " links";
 
         // Populate subcategory filter for resources
         var filterSel = els.resourceFilterSubcategory;
         if (filterSel) {
             while (filterSel.options.length > 1) filterSel.remove(1);
             var subCounts = {};
-            for (var s = 0; s < resources.length; s++) {
-                var sub = resources[s].subcategory || "General";
+            for (var s = 0; s < currentResources.length; s++) {
+                var sub = currentResources[s].subcategory || "General";
                 subCounts[sub] = (subCounts[sub] || 0) + 1;
             }
             var subs = Object.keys(subCounts).sort();
@@ -1635,49 +2003,37 @@
             filterSel.value = "all";
         }
 
-        renderResourceGrid(resources);
+        renderResourceHead();
+        renderResourceGrid(sortResources(currentResources, resourceSortKey, resourceSortDir));
     }
 
     function renderResourceGrid(resources) {
-        var grid = els["resources-grid"];
-        grid.textContent = "";
+        var tbody = els["resources-tbody"];
+        if (!tbody) return;
+        tbody.textContent = "";
 
         var frag = document.createDocumentFragment();
         for (var i = 0; i < resources.length; i++) {
-            frag.appendChild(createResourceCard(resources[i]));
+            frag.appendChild(createResourceRow(resources[i]));
         }
-        grid.appendChild(frag);
+        tbody.appendChild(frag);
     }
 
-    function extractDomain(url) {
-        try {
-            var a = document.createElement("a");
-            a.href = url;
-            return a.hostname.replace(/^www\./, "");
-        } catch (e) {
-            return "";
-        }
-    }
-
-    function createResourceCard(res) {
-        var card = document.createElement("article");
-        card.className = "av-resource-card";
-        card.setAttribute("role", "listitem");
-
+    function createResourceRow(res) {
+        var tr = document.createElement("tr");
         var domain = extractDomain(res.url);
+        var sub = res.subcategory && res.subcategory !== "General" ? res.subcategory : "";
+        var desc = cleanResourceDesc(res.description);
 
-        card.innerHTML =
-            '<div class="av-resource-card-header">' +
-                '<svg class="av-icon--sm av-resource-icon" aria-hidden="true"><use href="#icon-link"/></svg>' +
-                '<a href="' + escAttr(res.url) + '" class="av-resource-title" target="_blank" rel="noopener noreferrer">' + esc(res.title) + '</a>' +
-            '</div>' +
-            (res.description ? '<p class="av-resource-desc">' + esc(res.description) + '</p>' : '') +
-            '<footer class="av-resource-footer">' +
-                '<span class="av-resource-domain">' + esc(domain) + '</span>' +
-                (res.subcategory && res.subcategory !== "General" ? '<span class="av-badge av-badge--sub">' + esc(res.subcategory) + '</span>' : '') +
-            '</footer>';
+        tr.innerHTML =
+            '<td class="av-resource-table-title">' +
+                '<a href="' + escAttr(res.url) + '" target="_blank" rel="noopener noreferrer">' + esc(res.title) + '</a>' +
+            '</td>' +
+            '<td class="av-resource-table-desc">' + esc(desc) + '</td>' +
+            '<td class="av-resource-table-domain"><code>' + esc(domain) + '</code></td>' +
+            '<td>' + (sub ? '<span class="av-badge av-badge--sub">' + esc(sub) + '</span>' : '') + '</td>';
 
-        return card;
+        return tr;
     }
 
     // -------------------------------------------------------------- URL state

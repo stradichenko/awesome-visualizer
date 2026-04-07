@@ -136,6 +136,25 @@
                 </div>
             </section>
 
+            <table class="av-tier-summary" data-ref="tier-summary" aria-label="Dataset breakdown by tier">
+                <caption class="av-sr-only">Repository and category counts by tier</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Tier</th>
+                        <th scope="col">Categories</th>
+                        <th scope="col">Repos</th>
+                    </tr>
+                </thead>
+                <tbody data-ref="tier-summary-body"></tbody>
+                <tfoot>
+                    <tr class="av-tier-summary-total">
+                        <th scope="row">Total</th>
+                        <td data-ref="tier-total-cats">--</td>
+                        <td data-ref="tier-total-repos">--</td>
+                    </tr>
+                </tfoot>
+            </table>
+
             <div class="av-overview-header">
                 <h2 class="av-overview-heading">Official Awesome Lists</h2>
                 <div class="av-overview-search">
@@ -150,32 +169,80 @@
                     >
                 </div>
             </div>
-            <div class="av-overview-filter-bar">
-                <label for="overview-filter-language" class="av-sr-only">Filter by language</label>
-                <select id="overview-filter-language" class="av-select">
-                    <option value="all">All Languages</option>
-                </select>
-                <label for="overview-filter-health" class="av-sr-only">Minimum health score</label>
-                <select id="overview-filter-health" class="av-select">
-                    <option value="0">Any Health</option>
-                    <option value="40">Health 40+</option>
-                    <option value="60">Health 60+</option>
-                    <option value="80">Health 80+</option>
-                </select>
-            </div>
             <div class="av-overview-search-info" data-ref="overview-search-info" aria-live="polite" hidden></div>
             <div class="av-grid" data-ref="overview-search-results" role="list" aria-label="Search results" hidden></div>
-            <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Official awesome list categories"></div>
 
-            <section class="av-tier-section" data-ref="unofficial-section" aria-label="Unofficial awesome lists" hidden>
-                <h2 class="av-overview-heading av-overview-heading--tier">Unofficial Awesome Lists</h2>
+            <!-- Official Awesome Lists -->
+            <button type="button" class="av-segment-toggle av-segment-toggle--open" data-action="toggle-segment" aria-expanded="true" aria-controls="segment-official">
+                <svg class="av-icon" aria-hidden="true"><use href="#icon-repo"/></svg>
+                <span>Official Awesome Lists</span>
+                <span class="av-segment-count" data-ref="official-count"></span>
+                <svg class="av-segment-chevron av-segment-chevron--open av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
+            </button>
+            <section id="segment-official" class="av-segment" data-ref="segment-official" aria-label="Official awesome lists">
+                <div class="av-segment-filter-bar">
+                    <label for="official-filter-language" class="av-sr-only">Filter by language</label>
+                    <select id="official-filter-language" class="av-select" data-action="segment-filter" data-segment="official">
+                        <option value="all">All Languages</option>
+                    </select>
+                    <label for="official-filter-health" class="av-sr-only">Minimum health score</label>
+                    <select id="official-filter-health" class="av-select" data-action="segment-filter" data-segment="official">
+                        <option value="0">Any Health</option>
+                        <option value="40">Health 40+</option>
+                        <option value="60">Health 60+</option>
+                        <option value="80">Health 80+</option>
+                    </select>
+                </div>
+                <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Official awesome list categories"></div>
+            </section>
+
+            <!-- Unofficial Awesome Lists -->
+            <button type="button" class="av-segment-toggle" data-action="toggle-segment" aria-expanded="false" aria-controls="segment-unofficial">
+                <svg class="av-icon" aria-hidden="true"><use href="#icon-repo"/></svg>
+                <span>Unofficial Awesome Lists</span>
+                <span class="av-segment-count" data-ref="unofficial-count"></span>
+                <svg class="av-segment-chevron av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
+            </button>
+            <section id="segment-unofficial" class="av-segment" data-ref="segment-unofficial" aria-label="Unofficial awesome lists" hidden>
                 <p class="av-tier-desc">Lists with the awesome badge that are not linked from the official sindresorhus/awesome repository.</p>
+                <div class="av-segment-filter-bar">
+                    <label for="unofficial-filter-language" class="av-sr-only">Filter by language</label>
+                    <select id="unofficial-filter-language" class="av-select" data-action="segment-filter" data-segment="unofficial">
+                        <option value="all">All Languages</option>
+                    </select>
+                    <label for="unofficial-filter-health" class="av-sr-only">Minimum health score</label>
+                    <select id="unofficial-filter-health" class="av-select" data-action="segment-filter" data-segment="unofficial">
+                        <option value="0">Any Health</option>
+                        <option value="40">Health 40+</option>
+                        <option value="60">Health 60+</option>
+                        <option value="80">Health 80+</option>
+                    </select>
+                </div>
                 <div class="av-overview-grid" data-ref="unofficial-grid" role="list" aria-label="Unofficial awesome list categories"></div>
             </section>
 
-            <section class="av-tier-section" data-ref="noncanonical-section" aria-label="Non-canonical awesome lists" hidden>
-                <h2 class="av-overview-heading av-overview-heading--tier">Non-Canonical Awesome Lists</h2>
+            <!-- Non-Canonical Awesome Lists -->
+            <button type="button" class="av-segment-toggle" data-action="toggle-segment" aria-expanded="false" aria-controls="segment-noncanonical">
+                <svg class="av-icon" aria-hidden="true"><use href="#icon-repo"/></svg>
+                <span>Non-Canonical Awesome Lists</span>
+                <span class="av-segment-count" data-ref="noncanonical-count"></span>
+                <svg class="av-segment-chevron av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
+            </button>
+            <section id="segment-noncanonical" class="av-segment" data-ref="segment-noncanonical" aria-label="Non-canonical awesome lists" hidden>
                 <p class="av-tier-desc">Community-curated lists discovered via search - no awesome badge.</p>
+                <div class="av-segment-filter-bar">
+                    <label for="noncanonical-filter-language" class="av-sr-only">Filter by language</label>
+                    <select id="noncanonical-filter-language" class="av-select" data-action="segment-filter" data-segment="noncanonical">
+                        <option value="all">All Languages</option>
+                    </select>
+                    <label for="noncanonical-filter-health" class="av-sr-only">Minimum health score</label>
+                    <select id="noncanonical-filter-health" class="av-select" data-action="segment-filter" data-segment="noncanonical">
+                        <option value="0">Any Health</option>
+                        <option value="40">Health 40+</option>
+                        <option value="60">Health 60+</option>
+                        <option value="80">Health 80+</option>
+                    </select>
+                </div>
                 <div class="av-overview-grid" data-ref="noncanonical-grid" role="list" aria-label="Non-canonical awesome list categories"></div>
             </section>
         </section>
@@ -342,7 +409,15 @@
             <select id="resource-filter-subcategory" class="av-select av-resources-filter" data-action="filter-resource-subcategory">
                 <option value="all">All Subcategories</option>
             </select>
-            <div class="av-resources-grid" data-ref="resources-grid" role="list" aria-label="Resource links"></div>
+            <div class="av-table-wrap" data-ref="resources-grid">
+                <table class="av-table av-resource-table">
+                    <caption class="av-sr-only">Resource links for this category</caption>
+                    <thead>
+                        <tr data-ref="resources-thead"></tr>
+                    </thead>
+                    <tbody data-ref="resources-tbody"></tbody>
+                </table>
+            </div>
         </section>
         </section><!-- /av-detail -->
     </main>
