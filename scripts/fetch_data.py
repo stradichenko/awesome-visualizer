@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Awesome Visualizer - Data Pipeline (Deep Crawl)
 
-Two-level crawl:
+Recursive crawl with awesome badge detection:
 1. Fetch sindresorhus/awesome README -> discover awesome sub-list repos
-2. For each sub-list, fetch its README -> discover individual project repos
-3. Batch-query GitHub GraphQL API for metrics on all discovered repos
-4. Write site/data/repos.json
+2. For each sub-list, fetch its README -> verify awesome badge -> discover repos
+3. Identify nested awesome lists (badge + topic/name heuristics) -> recurse
+4. Batch-query GitHub GraphQL API for metrics on all discovered repos
+5. Write site/data/repos.json
+
+An awesome list is any repo whose README contains the awesome.re badge.
+Crawl depth is limited to MAX_CRAWL_DEPTH levels.
 
 Usage:
     nix develop --command python scripts/fetch_data.py
@@ -35,6 +39,8 @@ REST_DELAY = 0.3
 GQL_DELAY = 0.5
 MAX_RETRIES = 3
 RETRY_DELAY = 2
+AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
+MAX_CRAWL_DEPTH = 3
 
 
 def get_token():
@@ -120,6 +126,20 @@ def fetch_repo_readme(full_name, token):
         return base64.b64decode(data["content"]).decode("utf-8")
     except Exception:
         return None
+
+
+def has_awesome_badge(readme_text):
+    """Check if a README contains the awesome.re badge."""
+    if not readme_text:
+        return False
+    return bool(AWESOME_BADGE_RE.search(readme_text))
+
+
+def looks_like_awesome_list(name, full_name):
+    """Quick heuristic for potential awesome lists -- no API call needed."""
+    n = (name or "").lower()
+    fn = full_name.lower().split("/")[-1] if full_name else ""
+    return n.startswith("awesome") or fn.startswith("awesome")
 
 
 def extract_github_repo_links(text):
@@ -344,6 +364,7 @@ def process_batch_result(data, batch_info):
             "subcategory_id": info.get("subcategory_id", "general"),
         }
         rec["health"] = compute_health(rec)
+        rec["is_awesome_list"] = "awesome-list" in topics or "awesome" in topics
         repos.append(rec)
 
     return repos
@@ -367,24 +388,36 @@ def main():
     # Step 3: Crawl each sub-list for project repos
     print("\nCrawling sub-lists for project repos...")
     all_links = []
-    cat_meta = {}  # category_id -> {name, source_repo, url}
+    cat_meta = {}  # category_id -> {name, source_repo, url, is_awesome_list}
+    crawled_as_list = {MASTER_LIST.lower()}
     for i, sl in enumerate(sublists):
         tag = f"[{i + 1}/{len(sublists)}]"
         cid = sl["category_id"]
-        cat_meta[cid] = {
-            "name": sl["category_name"],
-            "source_repo": sl["full_name"],
-            "url": f"https://github.com/{sl['full_name']}",
-        }
+        crawled_as_list.add(sl["full_name"].lower())
         print(f"  {tag} {sl['full_name']} ({sl['category_name']})...", end="", flush=True)
 
         subreadme = fetch_repo_readme(sl["full_name"], token)
         if not subreadme:
             print(" SKIP")
+            cat_meta[cid] = {
+                "name": sl["category_name"],
+                "source_repo": sl["full_name"],
+                "url": f"https://github.com/{sl['full_name']}",
+                "is_awesome_list": False,
+            }
             continue
 
+        is_awesome = has_awesome_badge(subreadme)
+        cat_meta[cid] = {
+            "name": sl["category_name"],
+            "source_repo": sl["full_name"],
+            "url": f"https://github.com/{sl['full_name']}",
+            "is_awesome_list": is_awesome,
+        }
+
         links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
-        print(f" {len(links)} repos")
+        badge_tag = "awesome" if is_awesome else "no badge"
+        print(f" {len(links)} repos [{badge_tag}]")
         all_links.extend(links)
 
         if i < len(sublists) - 1:
@@ -419,6 +452,74 @@ def main():
         if batch_num < total_batches - 1:
             time.sleep(GQL_DELAY)
 
+    # Step 5b: Recursive awesome list discovery
+    print("\nDiscovering nested awesome lists...")
+    depth = 2
+    while depth <= MAX_CRAWL_DEPTH:
+        candidates = []
+        for r in all_repos:
+            fn_lower = r["full_name"].lower()
+            if fn_lower in crawled_as_list:
+                continue
+            crawled_as_list.add(fn_lower)
+            is_awesome = r.get("is_awesome_list", False)
+            if not is_awesome and not looks_like_awesome_list(r.get("name", ""), r["full_name"]):
+                continue
+            subreadme = fetch_repo_readme(r["full_name"], token)
+            if not subreadme or not has_awesome_badge(subreadme):
+                r["is_awesome_list"] = False
+                time.sleep(REST_DELAY)
+                continue
+            r["is_awesome_list"] = True
+            candidates.append((r, subreadme))
+            time.sleep(REST_DELAY)
+
+        if not candidates:
+            print(f"  No new awesome lists at depth {depth}")
+            break
+
+        print(f"  Found {len(candidates)} awesome lists at depth {depth}")
+        new_links = []
+        for r, subreadme in candidates:
+            cid = slugify(r.get("name", r["full_name"].split("/")[1]))
+            cname = r.get("link_name", r.get("name", ""))
+            links = parse_sublist_readme(subreadme, cname, cid, r["full_name"])
+            new_links.extend(links)
+            cat_meta[cid] = {
+                "name": cname,
+                "source_repo": r["full_name"],
+                "url": f"https://github.com/{r['full_name']}",
+                "is_awesome_list": True,
+            }
+
+        new_unique = []
+        for link in new_links:
+            key = link["full_name"].lower()
+            if key not in seen:
+                seen.add(key)
+                new_unique.append(link)
+
+        if not new_unique:
+            print(f"  No new repos from depth {depth} awesome lists")
+            break
+
+        print(f"  {len(new_unique)} new repos to fetch")
+        total_new = (len(new_unique) + BATCH_SIZE - 1) // BATCH_SIZE
+        for bn in range(total_new):
+            start = bn * BATCH_SIZE
+            batch = new_unique[start:start + BATCH_SIZE]
+            print(f"    Batch {bn + 1}/{total_new} ({len(batch)} repos)...", flush=True)
+            query = build_graphql_query(batch)
+            data = github_graphql(query, token)
+            repos = process_batch_result(data, batch)
+            all_repos.extend(repos)
+            if bn < total_new - 1:
+                time.sleep(GQL_DELAY)
+
+        depth += 1
+
+    print(f"\n  Total repos after discovery: {len(all_repos)}")
+
     # Step 6: Build category, subcategory, and language summaries
     cat_counts = {}
     cat_health = {}  # cid -> [health scores]
@@ -450,6 +551,7 @@ def main():
             "count": count,
             "source_repo": meta.get("source_repo", ""),
             "avg_health": avg_health,
+            "is_awesome_list": meta.get("is_awesome_list", False),
             "subcategory_count": len(cat_subcats.get(cid, set())),
             "top_languages": [{"name": l, "count": c} for l, c in top_langs],
         })
