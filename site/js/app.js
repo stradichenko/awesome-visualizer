@@ -30,14 +30,14 @@
         { id: "name", label: "Repository", sortKey: "name" },
         { id: "description", label: "Description", sortKey: null },
         { id: "subcategory", label: "Subcategory", sortKey: "subcategory" },
-        { id: "stars", label: "Stars", sortKey: "stars" },
-        { id: "forks", label: "Forks", sortKey: "forks" },
-        { id: "issues", label: "Issues", sortKey: "open_issues" },
         { id: "language", label: "Language", sortKey: "language" },
-        { id: "license", label: "License", sortKey: "license" },
-        { id: "commits_90d", label: "Commits (90d)", sortKey: "commits_90d" },
+        { id: "stars", label: "Stars", sortKey: "stars" },
+        { id: "health", label: "Health", sortKey: "health" },
         { id: "last_push", label: "Last Push", sortKey: "last_push" },
-        { id: "health", label: "Health", sortKey: "health" }
+        { id: "commits_90d", label: "Commits (90d)", sortKey: "commits_90d" },
+        { id: "issues", label: "Issues", sortKey: "open_issues" },
+        { id: "forks", label: "Forks", sortKey: "forks" },
+        { id: "license", label: "License", sortKey: "license" }
     ];
 
     var columnOrder = TABLE_COLUMNS.map(function (c) { return c.id; });
