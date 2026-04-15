@@ -26,6 +26,8 @@ Thumbs.db
 
 # Pipeline checkpoints
 .nc_checkpoint.json*
+.fetch_checkpoint.json*
+site/data/.pipeline/
 
 # Generated data files (CI rebuilds these)
 site/data/repos.json

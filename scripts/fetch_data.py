@@ -45,6 +45,7 @@ GITHUB_GRAPHQL = "https://api.github.com/graphql"
 GITHUB_API = "https://api.github.com"
 MASTER_LIST = "sindresorhus/awesome"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
+CHECKPOINT_FILE = Path(__file__).resolve().parent.parent / "site" / "data" / ".fetch_checkpoint.json"
 NINETY_DAYS_AGO = (datetime.now(UTC) - timedelta(days=90)).isoformat()
 MAX_SUBLISTS = 800
 REST_DELAY = 0.3
@@ -81,6 +82,31 @@ GITHUB_REPO_RE = re.compile(
 LIST_ITEM_RE = re.compile(r"^\s*[-*]\s+")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
 RESOURCE_DESC_RE = re.compile(r"^\s*[-*]\s+\[[^\]]+\]\([^)]+\)\s*[-:]?\s*(.*)")
+
+
+def save_checkpoint(stage, data):
+    """Save intermediate progress so the script can resume after a crash."""
+    payload = {"stage": stage, "data": data}
+    tmp = str(CHECKPOINT_FILE) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(payload, f, separators=(",", ":"))
+    Path(tmp).replace(CHECKPOINT_FILE)
+    size_mb = CHECKPOINT_FILE.stat().st_size / 1024 / 1024
+    print(f"  [checkpoint] Saved at stage '{stage}' ({size_mb:.1f}MB)")
+
+
+def load_checkpoint():
+    """Load checkpoint if it exists. Returns (stage, data) or (None, None)."""
+    if CHECKPOINT_FILE.exists():
+        with CHECKPOINT_FILE.open() as f:
+            cp = json.load(f)
+        return cp.get("stage"), cp.get("data")
+    return None, None
+
+
+def clear_checkpoint():
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
 
 
 def get_token():
@@ -494,88 +520,120 @@ def process_batch_result(data, batch_info):
 def main():
     token = get_token()
 
-    # Step 1: Fetch master README
-    print(f"Fetching master README from {MASTER_LIST}...")
-    readme = fetch_repo_readme(MASTER_LIST, token)
-    if not readme:
-        print("Failed to fetch master README", file=sys.stderr)
-        sys.exit(1)
+    # ---- Check for checkpoint from a previous interrupted run ----
+    cp_stage, cp_data = load_checkpoint()
 
-    # Step 2: Parse master README for sub-lists
-    print("Parsing sub-list links...")
-    sublists = parse_master_readme(readme)
-    print(f"  Found {len(sublists)} sub-lists")
+    if cp_stage == "crawl_done":
+        print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping steps 1-3")
+        unique = cp_data["unique"]
+        all_resources = cp_data["all_resources"]
+        cat_meta = cp_data["cat_meta"]
+        crawled_as_list = set(cp_data["crawled_as_list"])
+        seen = {link["full_name"].lower() for link in unique}
+        print(f"  Restored {len(unique)} unique links, {len(all_resources)} resources, {len(cat_meta)} categories")
+    elif cp_stage == "gql_done":
+        print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping steps 1-5")
+        unique = cp_data["unique"]
+        all_repos = cp_data["all_repos"]
+        all_resources = cp_data["all_resources"]
+        cat_meta = cp_data["cat_meta"]
+        crawled_as_list = set(cp_data["crawled_as_list"])
+        seen = {link["full_name"].lower() for link in unique}
+        print(f"  Restored {len(all_repos)} repos, {len(all_resources)} resources")
+    elif cp_stage == "discovery_done":
+        print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping to output")
+        all_repos = cp_data["all_repos"]
+        all_resources = cp_data["all_resources"]
+        cat_meta = cp_data["cat_meta"]
+        seen = {r["full_name"].lower() for r in all_repos}
+        print(f"  Restored {len(all_repos)} repos, {len(all_resources)} resources")
+    else:
+        cp_stage = None  # No valid checkpoint
 
-    # Step 3: Crawl each sub-list for project repos (parallel)
-    print("\nCrawling sub-lists for project repos...")
-    all_links = []
-    all_resources = []
-    cat_meta = {}  # category_id -> {name, source_repo, url, is_awesome_list}
-    crawled_as_list = {MASTER_LIST.lower()}
-    for sl in sublists:
-        crawled_as_list.add(sl["full_name"].lower())
+    # ---- Steps 1-3: Fetch master + crawl sublists ----
+    if not cp_stage:
+        # Step 1: Fetch master README
+        print(f"Fetching master README from {MASTER_LIST}...")
+        readme = fetch_repo_readme(MASTER_LIST, token)
+        if not readme:
+            print("Failed to fetch master README", file=sys.stderr)
+            sys.exit(1)
 
-    def _fetch_sublist(idx_sl):
-        idx, sl = idx_sl
-        subreadme = fetch_repo_readme(sl["full_name"], token)
-        return idx, sl, subreadme
+        # Step 2: Parse master README for sub-lists
+        print("Parsing sub-list links...")
+        sublists = parse_master_readme(readme)
+        print(f"  Found {len(sublists)} sub-lists")
 
-    sublist_results = [None] * len(sublists)
-    with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
-        futures = {pool.submit(_fetch_sublist, (i, sl)): i for i, sl in enumerate(sublists)}
-        for future in as_completed(futures):
-            idx, sl, subreadme = future.result()
-            sublist_results[idx] = (sl, subreadme)
+        # Step 3: Crawl each sub-list for project repos (parallel)
+        print("\nCrawling sub-lists for project repos...")
+        all_links = []
+        all_resources = []
+        cat_meta = {}  # category_id -> {name, source_repo, url, is_awesome_list}
+        crawled_as_list = {MASTER_LIST.lower()}
+        for sl in sublists:
+            crawled_as_list.add(sl["full_name"].lower())
 
-    for i, (sl, subreadme) in enumerate(sublist_results):
-        tag = f"[{i + 1}/{len(sublists)}]"
-        cid = sl["category_id"]
+        def _fetch_sublist(idx_sl):
+            idx, sl = idx_sl
+            subreadme = fetch_repo_readme(sl["full_name"], token)
+            return idx, sl, subreadme
 
-        if not subreadme:
-            print(f"  {tag} {sl['full_name']} ({sl['category_name']})... SKIP")
+        sublist_results = [None] * len(sublists)
+        with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
+            futures = {pool.submit(_fetch_sublist, (i, sl)): i for i, sl in enumerate(sublists)}
+            for future in as_completed(futures):
+                idx, sl, subreadme = future.result()
+                sublist_results[idx] = (sl, subreadme)
+
+        for i, (sl, subreadme) in enumerate(sublist_results):
+            tag = f"[{i + 1}/{len(sublists)}]"
+            cid = sl["category_id"]
+
+            if not subreadme:
+                print(f"  {tag} {sl['full_name']} ({sl['category_name']})... SKIP")
+                cat_meta[cid] = {
+                    "name": sl["category_name"],
+                    "source_repo": sl["full_name"],
+                    "url": f"https://github.com/{sl['full_name']}",
+                    "is_awesome_list": False,
+                }
+                continue
+
+            is_awesome = has_awesome_badge(subreadme)
             cat_meta[cid] = {
                 "name": sl["category_name"],
                 "source_repo": sl["full_name"],
                 "url": f"https://github.com/{sl['full_name']}",
-                "is_awesome_list": False,
+                "is_awesome_list": is_awesome,
             }
-            continue
 
-        is_awesome = has_awesome_badge(subreadme)
-        cat_meta[cid] = {
-            "name": sl["category_name"],
-            "source_repo": sl["full_name"],
-            "url": f"https://github.com/{sl['full_name']}",
-            "is_awesome_list": is_awesome,
-        }
+            links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
+            resources = extract_resource_links(subreadme, sl["category_name"], cid, sl["full_name"])
+            badge_tag = "awesome" if is_awesome else "no badge"
+            print(f"  {tag} {sl['full_name']} ({sl['category_name']})... {len(links)} repos, {len(resources)} resources [{badge_tag}]")
+            all_links.extend(links)
+            all_resources.extend(resources)
 
-        links = parse_sublist_readme(subreadme, sl["category_name"], cid, sl["full_name"])
-        resources = extract_resource_links(subreadme, sl["category_name"], cid, sl["full_name"])
-        badge_tag = "awesome" if is_awesome else "no badge"
-        print(f"  {tag} {sl['full_name']} ({sl['category_name']})... {len(links)} repos, {len(resources)} resources [{badge_tag}]")
-        all_links.extend(links)
-        all_resources.extend(resources)
+        # Step 4: Deduplicate (first-seen category wins)
+        seen = set()
+        unique = []
+        for link in all_links:
+            key = link["full_name"].lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(link)
 
-    # Step 4: Deduplicate (first-seen category wins)
-    seen = set()
-    unique = []
-    for link in all_links:
-        key = link["full_name"].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(link)
+        print(f"\n  {len(unique)} unique project repos after deduplication")
 
-    print(f"\n  {len(unique)} unique project repos after deduplication")
+        # -- Save point: crawl complete --
+        save_checkpoint("crawl_done", {
+            "unique": unique,
+            "all_resources": all_resources,
+            "cat_meta": cat_meta,
+            "crawled_as_list": sorted(crawled_as_list),
+        })
 
-    # Step 5: Batch query GraphQL for metrics (parallel)
-    print("\nFetching GitHub metrics...")
-    all_repos = []
-    total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
-    batches = []
-    for batch_num in range(total_batches):
-        start = batch_num * BATCH_SIZE
-        batches.append((batch_num, unique[start : start + BATCH_SIZE]))
-
+    # Helper used by both step 5 and step 5b
     def _fetch_gql_batch(batch_num_info):
         bn, batch = batch_num_info
         query = build_graphql_query(batch)
@@ -587,181 +645,214 @@ def main():
         missed = [info for info in batch if info["full_name"].lower() not in resolved_names]
         return bn, batch, repos, failed, missed
 
-    gql_results = [None] * total_batches
-    all_missed = []  # repos that got no GraphQL result
-    with ThreadPoolExecutor(max_workers=GQL_WORKERS) as pool:
-        futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in batches}
-        for future in as_completed(futures):
-            bn, batch, repos, failed, missed = future.result()
-            gql_results[bn] = repos
-            all_missed.extend(missed)
-            label = "FAILED" if failed else f"{len(repos)} repos"
-            print(f"  Batch {bn + 1}/{total_batches} done ({label})", flush=True)
+    # ---- Step 5: Batch query GraphQL for metrics ----
+    if cp_stage in ("gql_done", "discovery_done"):
+        print(f"\n  [checkpoint] Skipping GraphQL fetch (already done)")
+    else:
+        print("\nFetching GitHub metrics...")
+        all_repos = []
+        total_batches = (len(unique) + BATCH_SIZE - 1) // BATCH_SIZE
+        batches = []
+        for batch_num in range(total_batches):
+            start = batch_num * BATCH_SIZE
+            batches.append((batch_num, unique[start : start + BATCH_SIZE]))
 
-    # Retry failed batches sequentially with escalating cooldown
-    for attempt in range(1, BATCH_RETRIES + 1):
-        failed_indices = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0]
-        retry_batches = [(i, batches[i][1]) for i in failed_indices if len(batches[i][1]) > 0]
-        if not retry_batches:
-            break
-        cooldown = GQL_DELAY * (2 ** attempt)
-        print(f"  Retrying {len(retry_batches)} failed batches (round {attempt}/{BATCH_RETRIES}, {cooldown:.0f}s cooldown)...", flush=True)
-        time.sleep(cooldown)
-        for idx, batch in retry_batches:
-            time.sleep(GQL_DELAY)
-            query = build_graphql_query(batch)
-            data, _errors = github_graphql(query, token)
-            repos = process_batch_result(data, batch)
-            if repos:
-                gql_results[idx] = repos
-                print(f"    Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
-
-    still_failed = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0 and len(batches[i][1]) > 0]
-    if still_failed:
-        lost = sum(len(batches[i][1]) for i in still_failed)
-        print(f"  WARNING: {len(still_failed)} batches permanently failed ({lost} repos lost)", file=sys.stderr)
-
-    for repos in gql_results:
-        if repos:
-            all_repos.extend(repos)
-
-    # Recover renamed/transferred repos via REST API redirect
-    if all_missed:
-        resolved_already = {r["full_name"].lower() for r in all_repos}
-        to_resolve = [info for info in all_missed if info["full_name"].lower() not in resolved_already]
-        if to_resolve:
-            print(f"\nResolving {len(to_resolve)} unresolved repos via REST API...")
-            redirected = []
-            for info in to_resolve:
-                time.sleep(REST_DELAY)
-                rest = github_rest(f"repos/{info['full_name']}", token)
-                if rest and rest.get("full_name"):
-                    new_name = rest["full_name"]
-                    if new_name.lower() != info["full_name"].lower():
-                        print(f"  {info['full_name']} -> {new_name}", flush=True)
-                        redir_info = dict(info)
-                        redir_info["full_name"] = new_name
-                        redirected.append(redir_info)
-            if redirected:
-                print(f"  Re-querying {len(redirected)} redirected repos...")
-                redir_batches = [redirected[i:i + BATCH_SIZE] for i in range(0, len(redirected), BATCH_SIZE)]
-                for rb in redir_batches:
-                    time.sleep(GQL_DELAY)
-                    query = build_graphql_query(rb)
-                    data, _errors = github_graphql(query, token)
-                    repos = process_batch_result(data, rb)
-                    if repos:
-                        all_repos.extend(repos)
-                        print(f"    Recovered {len(repos)} renamed repos", flush=True)
-            dead = len(to_resolve) - len(redirected)
-            if dead:
-                print(f"  {dead} repos truly gone (deleted or private)")
-
-    # Step 5b: Recursive awesome list discovery
-    print("\nDiscovering nested awesome lists...")
-    depth = 2
-    while depth <= MAX_CRAWL_DEPTH:
-        potential = []
-        for r in all_repos:
-            fn_lower = r["full_name"].lower()
-            if fn_lower in crawled_as_list:
-                continue
-            crawled_as_list.add(fn_lower)
-            is_awesome = r.get("is_awesome_list", False)
-            if not is_awesome and not looks_like_awesome_list(r.get("name", ""), r["full_name"]):
-                continue
-            potential.append(r)
-
-        if not potential:
-            print(f"  No candidates at depth {depth}")
-            break
-
-        # Fetch READMEs in parallel
-        def _fetch_candidate_readme(repo):
-            subreadme = fetch_repo_readme(repo["full_name"], token)
-            return repo, subreadme
-
-        candidates = []
-        with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
-            for r, subreadme in pool.map(_fetch_candidate_readme, potential):
-                if not subreadme or not has_awesome_badge(subreadme):
-                    r["is_awesome_list"] = False
-                    continue
-                r["is_awesome_list"] = True
-                candidates.append((r, subreadme))
-
-        if not candidates:
-            print(f"  No new awesome lists at depth {depth}")
-            break
-
-        print(f"  Found {len(candidates)} awesome lists at depth {depth}")
-        new_links = []
-        for r, subreadme in candidates:
-            cid = slugify(r.get("name", r["full_name"].split("/")[1]))
-            cname = r.get("link_name", r.get("name", ""))
-            links = parse_sublist_readme(subreadme, cname, cid, r["full_name"])
-            resources = extract_resource_links(subreadme, cname, cid, r["full_name"])
-            new_links.extend(links)
-            all_resources.extend(resources)
-            cat_meta[cid] = {
-                "name": cname,
-                "source_repo": r["full_name"],
-                "url": f"https://github.com/{r['full_name']}",
-                "is_awesome_list": True,
-            }
-
-        new_unique = []
-        for link in new_links:
-            key = link["full_name"].lower()
-            if key not in seen:
-                seen.add(key)
-                new_unique.append(link)
-
-        if not new_unique:
-            print(f"  No new repos from depth {depth} awesome lists")
-            break
-
-        print(f"  {len(new_unique)} new repos to fetch")
-        total_new = (len(new_unique) + BATCH_SIZE - 1) // BATCH_SIZE
-        new_batches = []
-        for bn in range(total_new):
-            start = bn * BATCH_SIZE
-            new_batches.append((bn, new_unique[start:start + BATCH_SIZE]))
-
-        new_gql_results = [None] * total_new
+        gql_results = [None] * total_batches
+        all_missed = []  # repos that got no GraphQL result
         with ThreadPoolExecutor(max_workers=GQL_WORKERS) as pool:
-            futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in new_batches}
+            futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in batches}
             for future in as_completed(futures):
                 bn, batch, repos, failed, missed = future.result()
-                new_gql_results[bn] = repos
+                gql_results[bn] = repos
                 all_missed.extend(missed)
                 label = "FAILED" if failed else f"{len(repos)} repos"
-                print(f"    Batch {bn + 1}/{total_new} done ({label})", flush=True)
+                print(f"  Batch {bn + 1}/{total_batches} done ({label})", flush=True)
 
+        # Retry failed batches sequentially with escalating cooldown
         for attempt in range(1, BATCH_RETRIES + 1):
-            failed_indices = [i for i, r in enumerate(new_gql_results) if r is not None and len(r) == 0]
-            retry_batches = [(i, new_batches[i][1]) for i in failed_indices if len(new_batches[i][1]) > 0]
+            failed_indices = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0]
+            retry_batches = [(i, batches[i][1]) for i in failed_indices if len(batches[i][1]) > 0]
             if not retry_batches:
                 break
-            print(f"    Retrying {len(retry_batches)} failed batches (attempt {attempt}/{BATCH_RETRIES})...", flush=True)
+            cooldown = GQL_DELAY * (2 ** attempt)
+            print(f"  Retrying {len(retry_batches)} failed batches (round {attempt}/{BATCH_RETRIES}, {cooldown:.0f}s cooldown)...", flush=True)
+            time.sleep(cooldown)
             for idx, batch in retry_batches:
                 time.sleep(GQL_DELAY)
                 query = build_graphql_query(batch)
                 data, _errors = github_graphql(query, token)
                 repos = process_batch_result(data, batch)
                 if repos:
-                    new_gql_results[idx] = repos
-                    print(f"      Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
+                    gql_results[idx] = repos
+                    print(f"    Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
 
-        for repos in new_gql_results:
+        still_failed = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0 and len(batches[i][1]) > 0]
+        if still_failed:
+            lost = sum(len(batches[i][1]) for i in still_failed)
+            print(f"  WARNING: {len(still_failed)} batches permanently failed ({lost} repos lost)", file=sys.stderr)
+
+        for repos in gql_results:
             if repos:
                 all_repos.extend(repos)
 
-        depth += 1
+        # Recover renamed/transferred repos via REST API redirect
+        if all_missed:
+            resolved_already = {r["full_name"].lower() for r in all_repos}
+            to_resolve = [info for info in all_missed if info["full_name"].lower() not in resolved_already]
+            if to_resolve:
+                print(f"\nResolving {len(to_resolve)} unresolved repos via REST API...")
+                redirected = []
+                for info in to_resolve:
+                    time.sleep(REST_DELAY)
+                    rest = github_rest(f"repos/{info['full_name']}", token)
+                    if rest and rest.get("full_name"):
+                        new_name = rest["full_name"]
+                        if new_name.lower() != info["full_name"].lower():
+                            print(f"  {info['full_name']} -> {new_name}", flush=True)
+                            redir_info = dict(info)
+                            redir_info["full_name"] = new_name
+                            redirected.append(redir_info)
+                if redirected:
+                    print(f"  Re-querying {len(redirected)} redirected repos...")
+                    redir_batches = [redirected[i:i + BATCH_SIZE] for i in range(0, len(redirected), BATCH_SIZE)]
+                    for rb in redir_batches:
+                        time.sleep(GQL_DELAY)
+                        query = build_graphql_query(rb)
+                        data, _errors = github_graphql(query, token)
+                        repos = process_batch_result(data, rb)
+                        if repos:
+                            all_repos.extend(repos)
+                            print(f"    Recovered {len(repos)} renamed repos", flush=True)
+                dead = len(to_resolve) - len(redirected)
+                if dead:
+                    print(f"  {dead} repos truly gone (deleted or private)")
 
-    print(f"\n  Total repos after discovery: {len(all_repos)}")
+        # -- Save point: GraphQL fetch complete --
+        save_checkpoint("gql_done", {
+            "unique": unique,
+            "all_repos": all_repos,
+            "all_resources": all_resources,
+            "cat_meta": cat_meta,
+            "crawled_as_list": sorted(crawled_as_list),
+        })
 
-    # Deduplicate resources by URL (first-seen category wins)
+    # ---- Step 5b: Recursive awesome list discovery ----
+    if cp_stage in ("gql_done",):
+        all_missed = []  # Not carried across checkpoints; only used within a run
+    if cp_stage == "discovery_done":
+        print("\n  [checkpoint] Skipping recursive discovery (already done)")
+    else:
+        print("\nDiscovering nested awesome lists...")
+        depth = 2
+        while depth <= MAX_CRAWL_DEPTH:
+            potential = []
+            for r in all_repos:
+                fn_lower = r["full_name"].lower()
+                if fn_lower in crawled_as_list:
+                    continue
+                crawled_as_list.add(fn_lower)
+                is_awesome = r.get("is_awesome_list", False)
+                if not is_awesome and not looks_like_awesome_list(r.get("name", ""), r["full_name"]):
+                    continue
+                potential.append(r)
+
+            if not potential:
+                print(f"  No candidates at depth {depth}")
+                break
+
+            # Fetch READMEs in parallel
+            def _fetch_candidate_readme(repo):
+                subreadme = fetch_repo_readme(repo["full_name"], token)
+                return repo, subreadme
+
+            candidates = []
+            with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
+                for r, subreadme in pool.map(_fetch_candidate_readme, potential):
+                    if not subreadme or not has_awesome_badge(subreadme):
+                        r["is_awesome_list"] = False
+                        continue
+                    r["is_awesome_list"] = True
+                    candidates.append((r, subreadme))
+
+            if not candidates:
+                print(f"  No new awesome lists at depth {depth}")
+                break
+
+            print(f"  Found {len(candidates)} awesome lists at depth {depth}")
+            new_links = []
+            for r, subreadme in candidates:
+                cid = slugify(r.get("name", r["full_name"].split("/")[1]))
+                cname = r.get("link_name", r.get("name", ""))
+                links = parse_sublist_readme(subreadme, cname, cid, r["full_name"])
+                resources = extract_resource_links(subreadme, cname, cid, r["full_name"])
+                new_links.extend(links)
+                all_resources.extend(resources)
+                cat_meta[cid] = {
+                    "name": cname,
+                    "source_repo": r["full_name"],
+                    "url": f"https://github.com/{r['full_name']}",
+                    "is_awesome_list": True,
+                }
+
+            new_unique = []
+            for link in new_links:
+                key = link["full_name"].lower()
+                if key not in seen:
+                    seen.add(key)
+                    new_unique.append(link)
+
+            if not new_unique:
+                print(f"  No new repos from depth {depth} awesome lists")
+                break
+
+            print(f"  {len(new_unique)} new repos to fetch")
+            total_new = (len(new_unique) + BATCH_SIZE - 1) // BATCH_SIZE
+            new_batches = []
+            for bn in range(total_new):
+                start = bn * BATCH_SIZE
+                new_batches.append((bn, new_unique[start:start + BATCH_SIZE]))
+
+            new_gql_results = [None] * total_new
+            with ThreadPoolExecutor(max_workers=GQL_WORKERS) as pool:
+                futures = {pool.submit(_fetch_gql_batch, b): b[0] for b in new_batches}
+                for future in as_completed(futures):
+                    bn, batch, repos, failed, missed = future.result()
+                    new_gql_results[bn] = repos
+                    all_missed.extend(missed)
+                    label = "FAILED" if failed else f"{len(repos)} repos"
+                    print(f"    Batch {bn + 1}/{total_new} done ({label})", flush=True)
+
+            for attempt in range(1, BATCH_RETRIES + 1):
+                failed_indices = [i for i, r in enumerate(new_gql_results) if r is not None and len(r) == 0]
+                retry_batches = [(i, new_batches[i][1]) for i in failed_indices if len(new_batches[i][1]) > 0]
+                if not retry_batches:
+                    break
+                print(f"    Retrying {len(retry_batches)} failed batches (attempt {attempt}/{BATCH_RETRIES})...", flush=True)
+                for idx, batch in retry_batches:
+                    time.sleep(GQL_DELAY)
+                    query = build_graphql_query(batch)
+                    data, _errors = github_graphql(query, token)
+                    repos = process_batch_result(data, batch)
+                    if repos:
+                        new_gql_results[idx] = repos
+                        print(f"      Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
+
+            for repos in new_gql_results:
+                if repos:
+                    all_repos.extend(repos)
+
+            depth += 1
+
+        print(f"\n  Total repos after discovery: {len(all_repos)}")
+
+        # -- Save point: all fetching complete --
+        save_checkpoint("discovery_done", {
+            "all_repos": all_repos,
+            "all_resources": all_resources,
+            "cat_meta": cat_meta,
+        })
+
+    # ---- Step 6: Build output ----
     seen_urls = set()
     unique_resources = []
     for res in all_resources:
@@ -856,6 +947,9 @@ def main():
 
     size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
     print(f"\nDone. {len(all_repos)} repos, {len(unique_resources)} resources written to {OUTPUT_PATH} ({size_mb:.1f}MB)")
+
+    # Clean up checkpoint after successful completion
+    clear_checkpoint()
 
 
 if __name__ == "__main__":

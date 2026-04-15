@@ -80,7 +80,7 @@ def compute_star_buckets(repos):
 
 
 def compute_category_bubbles(repos, categories):
-    """Category bubble data: count, avg health, avg stars."""
+    """Category bubble data: count, avg health, avg stars, tier."""
     cat_data = {}
     for r in repos:
         cat = r.get("category", "")
@@ -92,10 +92,12 @@ def compute_category_bubbles(repos, categories):
         cat_data[cat]["health_sum"] += r.get("health", 0)
         cat_data[cat]["star_sum"] += r.get("stars", 0)
 
-    # Build name lookup from categories
+    # Build name and tier lookup from categories
     cat_names = {}
+    cat_tiers = {}
     for c in categories:
         cat_names[c["id"]] = c.get("name", c["id"])
+        cat_tiers[c["id"]] = c.get("tier", "official")
 
     bubbles = []
     for cat_id, d in cat_data.items():
@@ -107,6 +109,7 @@ def compute_category_bubbles(repos, categories):
             "count": d["count"],
             "health": round(d["health_sum"] / d["count"]),
             "stars": round(d["star_sum"] / d["count"]),
+            "tier": cat_tiers.get(cat_id, "official"),
         })
 
     bubbles.sort(key=lambda b: -b["count"])
@@ -303,6 +306,139 @@ def compute_topic_cooccurrence(repos):
     return result
 
 
+def compute_tier_comparison(repos):
+    """Side-by-side tier statistics for the comparison table."""
+    tiers = {}
+    for r in repos:
+        t = r.get("tier", "official")
+        if t not in tiers:
+            tiers[t] = {
+                "health": [], "stars": [], "commits_90d": [],
+                "forks": [], "open_issues": [],
+                "count": 0, "dormant": 0, "archived": 0,
+                "languages": set(), "categories": set(),
+            }
+        d = tiers[t]
+        d["count"] += 1
+        d["health"].append(r.get("health", 0))
+        d["stars"].append(r.get("stars", 0))
+        d["commits_90d"].append(r.get("commits_90d", 0))
+        d["forks"].append(r.get("forks", 0))
+        d["open_issues"].append(r.get("open_issues", 0))
+        if r.get("commits_90d", 0) == 0:
+            d["dormant"] += 1
+        if r.get("is_archived"):
+            d["archived"] += 1
+        lang = r.get("language")
+        if lang:
+            d["languages"].add(lang)
+        cat = r.get("category")
+        if cat:
+            d["categories"].add(cat)
+
+    def _median(vals):
+        s = sorted(vals)
+        n = len(s)
+        if n == 0:
+            return 0
+        mid = n // 2
+        return s[mid] if n % 2 else round((s[mid - 1] + s[mid]) / 2)
+
+    order = ["official", "unofficial", "non-canonical"]
+    result = []
+    for t in order:
+        if t not in tiers:
+            continue
+        d = tiers[t]
+        n = d["count"]
+        result.append({
+            "tier": t,
+            "count": n,
+            "categories": len(d["categories"]),
+            "avg_health": round(sum(d["health"]) / n) if n else 0,
+            "median_health": _median(d["health"]),
+            "avg_stars": round(sum(d["stars"]) / n) if n else 0,
+            "median_stars": _median(d["stars"]),
+            "avg_forks": round(sum(d["forks"]) / n) if n else 0,
+            "avg_open_issues": round(sum(d["open_issues"]) / n, 1) if n else 0,
+            "avg_commits_90d": round(sum(d["commits_90d"]) / n, 1) if n else 0,
+            "dormant_count": d["dormant"],
+            "dormant_pct": round(d["dormant"] / n * 100, 1) if n else 0,
+            "archived_count": d["archived"],
+            "archived_pct": round(d["archived"] / n * 100, 1) if n else 0,
+            "languages": len(d["languages"]),
+        })
+    return result
+
+
+def compute_dormancy_rate(repos, categories):
+    """Per-category dormancy rate (% repos with 0 commits in 90d)."""
+    cat_data = {}
+    for r in repos:
+        cat = r.get("category", "")
+        if not cat:
+            continue
+        if cat not in cat_data:
+            cat_data[cat] = {"total": 0, "dormant": 0}
+        cat_data[cat]["total"] += 1
+        if r.get("commits_90d", 0) == 0:
+            cat_data[cat]["dormant"] += 1
+
+    cat_names = {c["id"]: c.get("name", c["id"]) for c in categories}
+
+    result = []
+    for cat_id, d in cat_data.items():
+        if d["total"] < 5:
+            continue
+        result.append({
+            "id": cat_id,
+            "name": cat_names.get(cat_id, cat_id),
+            "total": d["total"],
+            "dormant": d["dormant"],
+            "pct": round(d["dormant"] / d["total"] * 100, 1),
+        })
+
+    result.sort(key=lambda x: -x["pct"])
+    return result[:20]
+
+
+def compute_language_trend(repos):
+    """Dominant language by creation year for stacked area chart."""
+    year_lang = {}
+    for r in repos:
+        lang = r.get("language")
+        if not lang:
+            continue
+        ca = r.get("created_at", r.get("createdAt", ""))
+        if not ca or len(ca) < 4:
+            continue
+        try:
+            year = int(ca[:4])
+        except ValueError:
+            continue
+        if year < 2008 or year > 2030:
+            continue
+        if year not in year_lang:
+            year_lang[year] = Counter()
+        year_lang[year][lang] += 1
+
+    if not year_lang:
+        return {"years": [], "languages": [], "series": {}}
+
+    # Find top languages across all years
+    total_lang = Counter()
+    for counts in year_lang.values():
+        total_lang += counts
+    top_langs = [lang for lang, _ in total_lang.most_common(10)]
+
+    years = list(range(min(year_lang), max(year_lang) + 1))
+    series = {}
+    for lang in top_langs:
+        series[lang] = [year_lang.get(y, Counter()).get(lang, 0) for y in years]
+
+    return {"years": [str(y) for y in years], "languages": top_langs, "series": series}
+
+
 def main():
     if not REPO_DATA.exists():
         print(f"Error: {REPO_DATA} not found. Run fetch_data.py first.", file=sys.stderr)
@@ -366,6 +502,18 @@ def main():
     topic_cooc = compute_topic_cooccurrence(repos)
     print(f"  {len(topic_cooc)} topic pairs")
 
+    print("Computing tier comparison...")
+    tier_cmp = compute_tier_comparison(repos)
+    print(f"  {len(tier_cmp)} tiers")
+
+    print("Computing dormancy rate...")
+    dormancy = compute_dormancy_rate(repos, categories)
+    print(f"  {len(dormancy)} categories")
+
+    print("Computing language trend...")
+    lang_trend = compute_language_trend(repos)
+    print(f"  {len(lang_trend.get('years', []))} years, {len(lang_trend.get('languages', []))} languages")
+
     viz = {
         "version": 3,
         "total_repos": len(repos),
@@ -382,6 +530,9 @@ def main():
         "fork_star_ratio": fork_star,
         "percentile_thresholds": percentiles,
         "topic_cooccurrence": topic_cooc,
+        "tier_comparison": tier_cmp,
+        "dormancy_rate": dormancy,
+        "language_trend": lang_trend,
         "bucket_definitions": {
             "health": [{"label": label, "min": lo, "max": hi} for label, lo, hi in HEALTH_BUCKETS],
             "stars": [{"label": label, "min": lo, "max": hi if hi != float("inf") else None} for label, lo, hi in STAR_BUCKETS],

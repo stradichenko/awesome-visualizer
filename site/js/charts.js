@@ -322,9 +322,10 @@
 
             // Interactive tooltip
             (function (barRow, barData) {
+                var suffix = opts.suffix || "repos";
                 barRow.addEventListener("mouseenter", function (e) {
                     barRow.classList.add("is-active");
-                    showTooltip('<strong>' + escText(barData.label) + '</strong><br>' + formatCount(barData.count) + ' repos', e);
+                    showTooltip('<strong>' + escText(barData.label) + '</strong><br>' + formatCount(barData.count) + ' ' + suffix, e);
                 });
                 barRow.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                 barRow.addEventListener("mouseleave", function () {
@@ -355,16 +356,68 @@
 
     // --------------------------------------------------------- Bubble chart
 
+    // Tier shape config: official=circle, unofficial=square, noncanonical=diamond
+    var TIER_SHAPES = {
+        official:     { shape: "circle",  label: "Official" },
+        unofficial:   { shape: "square",  label: "Unofficial" },
+        noncanonical: { shape: "diamond", label: "Non-canonical" }
+    };
+    var TIER_ORDER = ["official", "unofficial", "noncanonical"];
+
+    function createBubbleShape(shape, x, y, r, color) {
+        var el;
+        if (shape === "square") {
+            el = svgEl("rect", {
+                x: x - r, y: y - r,
+                width: r * 2, height: r * 2,
+                rx: "2", ry: "2",
+                fill: color, opacity: "0.7",
+                stroke: color, "stroke-width": "1.5",
+                filter: "url(#av-bubble-shadow)"
+            });
+        } else if (shape === "diamond") {
+            var pts = [
+                x + "," + (y - r * 1.15),
+                (x + r * 1.15) + "," + y,
+                x + "," + (y + r * 1.15),
+                (x - r * 1.15) + "," + y
+            ].join(" ");
+            el = svgEl("polygon", {
+                points: pts,
+                fill: color, opacity: "0.7",
+                stroke: color, "stroke-width": "1.5",
+                filter: "url(#av-bubble-shadow)"
+            });
+        } else {
+            el = svgEl("circle", {
+                cx: x, cy: y, r: r,
+                fill: color, opacity: "0.7",
+                stroke: color, "stroke-width": "1.5",
+                filter: "url(#av-bubble-shadow)"
+            });
+        }
+        return el;
+    }
+
     function bubble(container, data, opts) {
         opts = opts || {};
         var width = opts.width || 600;
         var height = opts.height || 400;
         var maxBubbles = opts.max || 50;
+        var tierField = opts.tierField || "tier";
+        var MIN_ZOOM = 1;
+        var MAX_ZOOM = 3;
 
         container.textContent = "";
 
         var items = data.slice(0, maxBubbles);
         if (!items.length) return;
+
+        // Track which tiers are present in the data
+        var presentTiers = {};
+        for (var pi = 0; pi < items.length; pi++) {
+            presentTiers[items[pi][tierField] || "official"] = true;
+        }
 
         // Find ranges for scaling
         var maxCount = 0;
@@ -378,6 +431,33 @@
 
         var wrap = document.createElement("div");
         wrap.className = "av-chart-bubble";
+        wrap.setAttribute("tabindex", "0");
+
+        // Tier filter checkboxes
+        var tierVisibility = {};
+        var tierBar = document.createElement("div");
+        tierBar.className = "av-chart-bubble-tiers";
+        for (var ti = 0; ti < TIER_ORDER.length; ti++) {
+            var tKey = TIER_ORDER[ti];
+            if (!presentTiers[tKey]) continue;
+            tierVisibility[tKey] = true;
+            var tLabel = document.createElement("label");
+            tLabel.className = "av-chart-bubble-tier-label";
+            var tCb = document.createElement("input");
+            tCb.type = "checkbox";
+            tCb.checked = true;
+            tCb.setAttribute("data-tier", tKey);
+            tCb.className = "av-chart-bubble-tier-cb";
+            var tShape = document.createElement("span");
+            tShape.className = "av-chart-bubble-tier-icon av-chart-bubble-tier-icon--" + TIER_SHAPES[tKey].shape;
+            var tText = document.createElement("span");
+            tText.textContent = TIER_SHAPES[tKey].label;
+            tLabel.appendChild(tCb);
+            tLabel.appendChild(tShape);
+            tLabel.appendChild(tText);
+            tierBar.appendChild(tLabel);
+        }
+        wrap.appendChild(tierBar);
 
         var svg = createSvg(width, height);
         svg.setAttribute("class", "av-chart-bubble-svg");
@@ -417,15 +497,15 @@
         }
 
         // Axis tick labels
-        for (var ti = 0; ti <= gridTicks; ti++) {
-            var starVal = maxStars > 0 ? Math.round((ti / gridTicks) * maxStars) : 0;
-            var healthVal = maxHealth > 0 ? Math.round(((gridTicks - ti) / gridTicks) * maxHealth) : 0;
+        for (var tki = 0; tki <= gridTicks; tki++) {
+            var starVal = maxStars > 0 ? Math.round((tki / gridTicks) * maxStars) : 0;
+            var healthVal = maxHealth > 0 ? Math.round(((gridTicks - tki) / gridTicks) * maxHealth) : 0;
             // X-axis ticks
             var xTick = svgEl("text", {
-                x: padding + (ti / gridTicks) * plotW,
+                x: padding + (tki / gridTicks) * plotW,
                 y: padding + plotH + 16,
                 "text-anchor": "middle",
-                "font-size": "9",
+                "font-size": "7",
                 fill: "var(--av-text-tertiary)"
             });
             xTick.textContent = formatCount(starVal);
@@ -433,9 +513,9 @@
             // Y-axis ticks
             var yTick = svgEl("text", {
                 x: padding - 8,
-                y: padding + (ti / gridTicks) * plotH + 3,
+                y: padding + (tki / gridTicks) * plotH + 3,
                 "text-anchor": "end",
-                "font-size": "9",
+                "font-size": "7",
                 fill: "var(--av-text-tertiary)"
             });
             yTick.textContent = healthVal;
@@ -447,7 +527,7 @@
             x: width / 2,
             y: height - 4,
             "text-anchor": "middle",
-            "font-size": "11",
+            "font-size": "8",
             fill: "var(--av-text-tertiary)"
         });
         xLabel.textContent = "Avg Stars";
@@ -457,46 +537,47 @@
             x: 10,
             y: height / 2,
             "text-anchor": "middle",
-            "font-size": "11",
+            "font-size": "8",
             fill: "var(--av-text-tertiary)",
             transform: "rotate(-90 10 " + (height / 2) + ")"
         });
         yLabel.textContent = "Avg Health";
         contentG.appendChild(yLabel);
 
-        // Plot bubbles
+        // Plot bubbles - grouped by tier for easier toggling
         var minR = 6;
         var maxR = 30;
+        var tierGroups = {};
 
         for (var j = 0; j < items.length; j++) {
             var b = items[j];
+            var bTier = b[tierField] || "official";
+            var shape = (TIER_SHAPES[bTier] || TIER_SHAPES.official).shape;
             var x = padding + (maxStars > 0 ? (b.stars / maxStars) * plotW : plotW / 2);
             var y = padding + plotH - (maxHealth > 0 ? (b.health / maxHealth) * plotH : plotH / 2);
             var r = minR + (maxCount > 0 ? (b.count / maxCount) * (maxR - minR) : minR);
             var color = healthColorForScore(b.health);
 
+            if (!tierGroups[bTier]) {
+                tierGroups[bTier] = svgEl("g", {
+                    "class": "av-chart-bubble-tier-group",
+                    "data-tier": bTier
+                });
+            }
+
             var g = svgEl("g", { "class": "av-chart-bubble-node" });
 
-            var circle = svgEl("circle", {
-                cx: x,
-                cy: y,
-                r: r,
-                fill: color,
-                opacity: "0.7",
-                stroke: color,
-                "stroke-width": "1.5",
-                filter: "url(#av-bubble-shadow)"
-            });
-
-            g.appendChild(circle);
+            var shapeEl = createBubbleShape(shape, x, y, r, color);
+            g.appendChild(shapeEl);
 
             // Interactive tooltip and hover
-            (function (bubbleG, bubbleCircle, bubbleData) {
+            (function (bubbleG, bShape, bubbleData, bTierName) {
                 bubbleG.addEventListener("mouseenter", function (e) {
-                    bubbleCircle.setAttribute("opacity", "1");
-                    bubbleCircle.setAttribute("stroke-width", "3");
+                    bShape.setAttribute("opacity", "1");
+                    bShape.setAttribute("stroke-width", "3");
                     showTooltip(
                         '<strong>' + escText(bubbleData.name) + '</strong><br>' +
+                        '<span class="av-tooltip-tier">' + escText((TIER_SHAPES[bTierName] || TIER_SHAPES.official).label) + '</span><br>' +
                         bubbleData.count + ' repos<br>' +
                         'Health: ' + bubbleData.health + '<br>' +
                         'Avg stars: ' + formatCount(bubbleData.stars), e
@@ -504,18 +585,18 @@
                 });
                 bubbleG.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
                 bubbleG.addEventListener("mouseleave", function () {
-                    bubbleCircle.setAttribute("opacity", "0.7");
-                    bubbleCircle.setAttribute("stroke-width", "1.5");
+                    bShape.setAttribute("opacity", "0.7");
+                    bShape.setAttribute("stroke-width", "1.5");
                     hideTooltip();
                 });
                 if (opts.onClick) {
                     bubbleG.style.cursor = "pointer";
                     bubbleG.addEventListener("click", function () { opts.onClick(bubbleData); });
                 }
-            })(g, circle, b);
+            })(g, shapeEl, b, bTier);
 
-            // Label for all bubbles -- font size proportional to radius
-            var fontSize = Math.max(7, Math.min(r * 0.6, 14));
+            // Label - font size proportional to radius
+            var fontSize = Math.max(6, Math.min(r * 0.55, 12));
             var maxChars = Math.max(4, Math.round(r * 0.8));
             var label = svgEl("text", {
                 x: x,
@@ -535,8 +616,14 @@
             }
 
             g.appendChild(label);
+            tierGroups[bTier].appendChild(g);
+        }
 
-            contentG.appendChild(g);
+        // Append tier groups in order
+        for (var tg = 0; tg < TIER_ORDER.length; tg++) {
+            if (tierGroups[TIER_ORDER[tg]]) {
+                contentG.appendChild(tierGroups[TIER_ORDER[tg]]);
+            }
         }
 
         svg.appendChild(contentG);
@@ -549,37 +636,90 @@
             { label: "40-59", color: "var(--av-warning)" },
             { label: "0-39", color: "var(--av-danger)" }
         ];
-        var lgX = width - 80;
-        var lgY = 10;
+        var lgX = width - 72;
+        var lgY = 8;
+        var lgSpacing = 13;
         for (var li = 0; li < legendItems.length; li++) {
             var lgItem = legendItems[li];
             var lgCircle = svgEl("circle", {
-                cx: lgX, cy: lgY + li * 16, r: "5",
+                cx: lgX, cy: lgY + li * lgSpacing, r: "4",
                 fill: lgItem.color, opacity: "0.8"
             });
             legendG.appendChild(lgCircle);
             var lgText = svgEl("text", {
-                x: lgX + 10, y: lgY + li * 16 + 4,
-                "font-size": "9", fill: "var(--av-text-secondary)"
+                x: lgX + 8, y: lgY + li * lgSpacing + 3,
+                "font-size": "7", fill: "var(--av-text-secondary)"
             });
             lgText.textContent = lgItem.label;
             legendG.appendChild(lgText);
         }
+
+        // Shape legend under health legend
+        var shpY = lgY + legendItems.length * lgSpacing + 8;
+        var shpItems = [
+            { shape: "circle",  label: "Official" },
+            { shape: "square",  label: "Unofficial" },
+            { shape: "diamond", label: "Non-canonical" }
+        ];
+        for (var si = 0; si < shpItems.length; si++) {
+            if (!presentTiers[TIER_ORDER[si]]) continue;
+            var sx = lgX;
+            var sy = shpY + si * lgSpacing;
+            if (shpItems[si].shape === "circle") {
+                legendG.appendChild(svgEl("circle", {
+                    cx: sx, cy: sy, r: "4",
+                    fill: "var(--av-text-secondary)", opacity: "0.7"
+                }));
+            } else if (shpItems[si].shape === "square") {
+                legendG.appendChild(svgEl("rect", {
+                    x: sx - 4, y: sy - 4, width: "8", height: "8", rx: "1",
+                    fill: "var(--av-text-secondary)", opacity: "0.7"
+                }));
+            } else {
+                legendG.appendChild(svgEl("polygon", {
+                    points: sx + "," + (sy - 5) + " " + (sx + 5) + "," + sy + " " + sx + "," + (sy + 5) + " " + (sx - 5) + "," + sy,
+                    fill: "var(--av-text-secondary)", opacity: "0.7"
+                }));
+            }
+            var shpText = svgEl("text", {
+                x: sx + 8, y: sy + 3,
+                "font-size": "7", fill: "var(--av-text-secondary)"
+            });
+            shpText.textContent = shpItems[si].label;
+            legendG.appendChild(shpText);
+        }
+
         svg.appendChild(legendG);
 
         // Bubble size legend
-        var sizeY = lgY + legendItems.length * 16 + 12;
+        var sizeY = shpY + shpItems.length * lgSpacing + 2;
         var sizeLabel = svgEl("text", {
-            x: lgX - 6, y: sizeY,
-            "font-size": "9", fill: "var(--av-text-tertiary)"
+            x: lgX - 4, y: sizeY,
+            "font-size": "7", fill: "var(--av-text-tertiary)"
         });
         sizeLabel.textContent = "Size = repo count";
         svg.appendChild(sizeLabel);
 
         wrap.appendChild(svg);
 
-        // Zoom & pan controls
+        // --- Tier checkbox toggle ---
+        tierBar.addEventListener("change", function (e) {
+            var cb = e.target;
+            if (!cb.getAttribute("data-tier")) return;
+            var tier = cb.getAttribute("data-tier");
+            tierVisibility[tier] = cb.checked;
+            var grp = contentG.querySelector('[data-tier="' + tier + '"]');
+            if (grp) grp.setAttribute("display", cb.checked ? "" : "none");
+        });
+
+        // --- Zoom & pan ---
         var zoomState = { scale: 1, tx: 0, ty: 0, dragging: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+
+        // Zoom level indicator
+        var zoomIndicator = document.createElement("span");
+        zoomIndicator.className = "av-chart-bubble-zoom-level";
+        zoomIndicator.textContent = "1.0x";
+        zoomIndicator.hidden = true;
 
         function applyTransform() {
             contentG.setAttribute("transform",
@@ -587,27 +727,47 @@
                 "scale(" + zoomState.scale + ")");
         }
 
-        svg.addEventListener("wheel", function (e) {
-            e.preventDefault();
-            var rect = svg.getBoundingClientRect();
-            var mx = e.clientX - rect.left;
-            var my = e.clientY - rect.top;
-            // Convert screen coords to SVG coords
-            var svgX = mx * (width / rect.width);
-            var svgY = my * (height / rect.height);
+        function updateZoomUI() {
+            var isDefault = (zoomState.scale === 1 && zoomState.tx === 0 && zoomState.ty === 0);
+            resetBtn.hidden = isDefault;
+            zoomIndicator.hidden = isDefault;
+            zoomIndicator.textContent = zoomState.scale.toFixed(1) + "x";
+        }
 
+        function zoomToPoint(svgX, svgY, factor) {
             var oldScale = zoomState.scale;
-            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-            var newScale = Math.max(0.5, Math.min(oldScale * factor, 8));
-
-            // Zoom toward cursor
+            var newScale = Math.max(MIN_ZOOM, Math.min(oldScale * factor, MAX_ZOOM));
             zoomState.tx = svgX - (svgX - zoomState.tx) * (newScale / oldScale);
             zoomState.ty = svgY - (svgY - zoomState.ty) * (newScale / oldScale);
             zoomState.scale = newScale;
             applyTransform();
-            updateResetBtn();
+            updateZoomUI();
+        }
+
+        function screenToSvg(clientX, clientY) {
+            var rect = svg.getBoundingClientRect();
+            return {
+                x: (clientX - rect.left) * (width / rect.width),
+                y: (clientY - rect.top) * (height / rect.height)
+            };
+        }
+
+        // Wheel zoom
+        svg.addEventListener("wheel", function (e) {
+            e.preventDefault();
+            var pt = screenToSvg(e.clientX, e.clientY);
+            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            zoomToPoint(pt.x, pt.y, factor);
         });
 
+        // Double-click to zoom in
+        svg.addEventListener("dblclick", function (e) {
+            e.preventDefault();
+            var pt = screenToSvg(e.clientX, e.clientY);
+            zoomToPoint(pt.x, pt.y, 1.5);
+        });
+
+        // Drag to pan
         svg.addEventListener("mousedown", function (e) {
             if (e.button !== 0) return;
             zoomState.dragging = true;
@@ -675,7 +835,7 @@
                 var tdy = e.touches[1].clientY - e.touches[0].clientY;
                 var dist = Math.sqrt(tdx * tdx + tdy * tdy);
                 var factor = dist / lastTouchDist;
-                var newScale = Math.max(0.5, Math.min(zoomState.scale * factor, 8));
+                var newScale = Math.max(MIN_ZOOM, Math.min(zoomState.scale * factor, MAX_ZOOM));
 
                 var rect2 = svg.getBoundingClientRect();
                 var cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect2.left) * (width / rect2.width);
@@ -685,7 +845,7 @@
                 zoomState.scale = newScale;
                 lastTouchDist = dist;
                 applyTransform();
-                updateResetBtn();
+                updateZoomUI();
             }
             e.preventDefault();
         }, { passive: false });
@@ -704,24 +864,40 @@
         resetBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 1v4.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.2 10.5a6 6 0 1 0 .9-5.5L1.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         resetBtn.hidden = true;
 
-        function updateResetBtn() {
-            resetBtn.hidden = (zoomState.scale === 1 && zoomState.tx === 0 && zoomState.ty === 0);
-        }
-
         resetBtn.addEventListener("click", function () {
             zoomState.scale = 1;
             zoomState.tx = 0;
             zoomState.ty = 0;
             applyTransform();
-            resetBtn.hidden = true;
+            updateZoomUI();
         });
 
         wrap.appendChild(resetBtn);
+        wrap.appendChild(zoomIndicator);
+
+        // Keyboard shortcuts (+/- zoom, 0 reset)
+        wrap.addEventListener("keydown", function (e) {
+            var key = e.key;
+            if (key === "+" || key === "=") {
+                e.preventDefault();
+                zoomToPoint(width / 2, height / 2, 1.25);
+            } else if (key === "-" || key === "_") {
+                e.preventDefault();
+                zoomToPoint(width / 2, height / 2, 1 / 1.25);
+            } else if (key === "0") {
+                e.preventDefault();
+                zoomState.scale = 1;
+                zoomState.tx = 0;
+                zoomState.ty = 0;
+                applyTransform();
+                updateZoomUI();
+            }
+        });
 
         // Zoom hint
         var hint = document.createElement("div");
         hint.className = "av-chart-bubble-hint";
-        hint.textContent = "Scroll to zoom, drag to pan";
+        hint.textContent = "Scroll to zoom, drag to pan, double-click to zoom in, +/- keys";
         wrap.appendChild(hint);
 
         container.appendChild(wrap);
@@ -782,6 +958,159 @@
         container.appendChild(wrap);
     }
 
+    // --------------------------------------------------- Stacked area chart
+
+    function stackedArea(container, data, opts) {
+        opts = opts || {};
+        var width = opts.width || 600;
+        var height = opts.height || 300;
+        var padding = { top: 20, right: 20, bottom: 40, left: 50 };
+
+        container.textContent = "";
+        if (!data.years || !data.years.length || !data.languages || !data.languages.length) {
+            var empty = document.createElement("p");
+            empty.className = "av-chart-empty";
+            empty.textContent = "Not enough data yet";
+            container.appendChild(empty);
+            return;
+        }
+
+        var years = data.years;
+        var langs = data.languages;
+        var series = data.series;
+
+        // Compute stacked totals per year
+        var stacked = [];
+        for (var yi = 0; yi < years.length; yi++) {
+            var bottom = 0;
+            var slices = [];
+            for (var li = 0; li < langs.length; li++) {
+                var val = series[langs[li]][yi] || 0;
+                slices.push({ lang: langs[li], y0: bottom, y1: bottom + val });
+                bottom += val;
+            }
+            stacked.push({ year: years[yi], slices: slices, total: bottom });
+        }
+
+        var maxTotal = 0;
+        for (var si = 0; si < stacked.length; si++) {
+            if (stacked[si].total > maxTotal) maxTotal = stacked[si].total;
+        }
+        if (maxTotal === 0) return;
+
+        var wrap = document.createElement("div");
+        wrap.className = "av-chart-stacked-area";
+
+        var plotW = width - padding.left - padding.right;
+        var plotH = height - padding.top - padding.bottom;
+        var svg = createSvg(width, height);
+
+        // X and Y scale helpers
+        var xStep = years.length > 1 ? plotW / (years.length - 1) : plotW;
+        function xPos(i) { return padding.left + i * xStep; }
+        function yPos(v) { return padding.top + plotH - (v / maxTotal) * plotH; }
+
+        // Grid lines
+        var gridTicks = 4;
+        for (var gi = 0; gi <= gridTicks; gi++) {
+            var gy = padding.top + (gi / gridTicks) * plotH;
+            var gl = svgEl("line", {
+                x1: padding.left, y1: gy, x2: padding.left + plotW, y2: gy,
+                stroke: "var(--av-border)", "stroke-width": "0.5", "stroke-dasharray": "4 4"
+            });
+            svg.appendChild(gl);
+            var tickVal = Math.round(maxTotal * (1 - gi / gridTicks));
+            var tickLabel = svgEl("text", {
+                x: padding.left - 8, y: gy + 3,
+                "text-anchor": "end", "font-size": "9", fill: "var(--av-text-tertiary)"
+            });
+            tickLabel.textContent = formatCount(tickVal);
+            svg.appendChild(tickLabel);
+        }
+
+        // Draw stacked areas (back to front)
+        for (var ai = langs.length - 1; ai >= 0; ai--) {
+            var pts = [];
+            for (var pi = 0; pi < stacked.length; pi++) {
+                pts.push(xPos(pi) + "," + yPos(stacked[pi].slices[ai].y1));
+            }
+            for (var qi = stacked.length - 1; qi >= 0; qi--) {
+                pts.push(xPos(qi) + "," + yPos(stacked[qi].slices[ai].y0));
+            }
+            var polygon = svgEl("polygon", {
+                points: pts.join(" "),
+                fill: PALETTE[ai % PALETTE.length],
+                opacity: "0.75",
+                "class": "av-chart-area-band",
+                "data-chart-index": String(ai)
+            });
+
+            (function (poly, lang, idx, svgRef) {
+                poly.addEventListener("mouseenter", function (e) {
+                    var bands = svgRef.querySelectorAll(".av-chart-area-band");
+                    for (var b = 0; b < bands.length; b++) {
+                        bands[b].setAttribute("opacity", bands[b] === poly ? "0.9" : "0.25");
+                    }
+                    showTooltip('<strong>' + escText(lang) + '</strong>', e);
+                });
+                poly.addEventListener("mousemove", function (e) { throttledPositionTooltip(e); });
+                poly.addEventListener("mouseleave", function () {
+                    var bands = svgRef.querySelectorAll(".av-chart-area-band");
+                    for (var b = 0; b < bands.length; b++) {
+                        bands[b].setAttribute("opacity", "0.75");
+                    }
+                    hideTooltip();
+                });
+            })(polygon, langs[ai], ai, svg);
+
+            svg.appendChild(polygon);
+        }
+
+        // X-axis labels
+        var labelInterval = Math.max(1, Math.ceil(years.length / 12));
+        for (var xi = 0; xi < years.length; xi += labelInterval) {
+            var xTick = svgEl("text", {
+                x: xPos(xi), y: height - padding.bottom + 16,
+                "text-anchor": "middle", "font-size": "9", fill: "var(--av-text-tertiary)"
+            });
+            xTick.textContent = years[xi];
+            svg.appendChild(xTick);
+        }
+
+        wrap.appendChild(svg);
+
+        // Legend
+        var legend = document.createElement("ul");
+        legend.className = "av-chart-legend av-chart-legend--inline";
+        for (var lk = 0; lk < langs.length; lk++) {
+            var lgLi = document.createElement("li");
+            lgLi.className = "av-chart-legend-item";
+            lgLi.innerHTML =
+                '<span class="av-chart-legend-dot" style="--dot-color:' + PALETTE[lk % PALETTE.length] + '"></span>' +
+                '<span class="av-chart-legend-label">' + escText(langs[lk]) + '</span>';
+
+            (function (legendLi, idx, svgRef) {
+                legendLi.addEventListener("mouseenter", function () {
+                    var bands = svgRef.querySelectorAll(".av-chart-area-band");
+                    for (var b = 0; b < bands.length; b++) {
+                        bands[b].setAttribute("opacity", bands[b].getAttribute("data-chart-index") === String(idx) ? "0.9" : "0.25");
+                    }
+                });
+                legendLi.addEventListener("mouseleave", function () {
+                    var bands = svgRef.querySelectorAll(".av-chart-area-band");
+                    for (var b = 0; b < bands.length; b++) {
+                        bands[b].setAttribute("opacity", "0.75");
+                    }
+                });
+            })(lgLi, lk, svg);
+
+            legend.appendChild(lgLi);
+        }
+        wrap.appendChild(legend);
+
+        container.appendChild(wrap);
+    }
+
     // ----------------------------------------------------------- Utilities
 
     function healthColorForScore(score) {
@@ -808,7 +1137,8 @@
         donut: donut,
         bar: bar,
         bubble: bubble,
-        horizontalBar: horizontalBar
+        horizontalBar: horizontalBar,
+        stackedArea: stackedArea
     };
 
 })();

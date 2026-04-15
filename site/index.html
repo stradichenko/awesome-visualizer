@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Awesome Visualizer</title>
     <meta name="description" content="Data-driven explorer for awesome lists - search, filter, and compare GitHub repositories by health, stars, activity, and more.">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+    <link rel="icon" type="image/svg+xml" href="logo.svg">
     <link rel="stylesheet" href="css/tokens.css">
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/components.css">
@@ -68,7 +70,7 @@
 
     <nav class="av-navbar" aria-label="Main navigation">
         <button type="button" class="av-navbar-brand" data-action="back-overview" aria-label="Go to home">
-            <span class="av-navbar-logo">AV</span>
+            <img class="av-navbar-logo" src="logo.svg" alt="" aria-hidden="true">
             <span class="av-navbar-title">Awesome Visualizer</span>
         </button>
         <div class="av-navbar-meta" data-ref="last-updated"></div>
@@ -126,51 +128,105 @@
                         <h3 class="av-viz-panel-title">Health by Language</h3>
                         <div class="av-viz-panel-body" data-ref="viz-health-lang"></div>
                     </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Licenses</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-license-donut"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Creation Year</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-creation-year"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Activity (Commits 90d)</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-activity-dist"></div>
+                    </div>
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Fork/Star Ratio</h3>
+                        <div class="av-viz-panel-body" data-ref="viz-fork-star"></div>
+                    </div>
+                </div>
+                <div class="av-viz-full">
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Tier Comparison</h3>
+                        <p class="av-viz-panel-desc">Side-by-side stats for official, unofficial, and non-canonical repos</p>
+                        <div class="av-viz-panel-body" data-ref="viz-tier-comparison"></div>
+                    </div>
+                </div>
+                <div class="av-viz-full">
+                    <div class="av-viz-panel">
+                        <h3 class="av-viz-panel-title">Language Trend</h3>
+                        <p class="av-viz-panel-desc">Dominant languages by repo creation year</p>
+                        <div class="av-viz-panel-body av-viz-panel-body--wide" data-ref="viz-language-trend"></div>
+                    </div>
                 </div>
                 <div class="av-viz-full">
                     <div class="av-viz-panel">
                         <h3 class="av-viz-panel-title">Category Landscape</h3>
-                        <p class="av-viz-panel-desc">Bubble size = repo count, X = avg stars, Y = avg health</p>
+                        <p class="av-viz-panel-desc">Bubble size = repo count, X = avg stars, Y = avg health. Shape = tier (circle/square/diamond)</p>
                         <div class="av-viz-panel-body av-viz-panel-body--wide" data-ref="viz-category-bubbles"></div>
                     </div>
                 </div>
             </section>
 
-            <table class="av-tier-summary" data-ref="tier-summary" aria-label="Dataset breakdown by tier">
-                <caption class="av-sr-only">Repository and category counts by tier</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Tier</th>
-                        <th scope="col">Categories</th>
-                        <th scope="col">Repos</th>
-                    </tr>
-                </thead>
-                <tbody data-ref="tier-summary-body"></tbody>
-                <tfoot>
-                    <tr class="av-tier-summary-total">
-                        <th scope="row">Total</th>
-                        <td data-ref="tier-total-cats">--</td>
-                        <td data-ref="tier-total-repos">--</td>
-                    </tr>
-                </tfoot>
-            </table>
-
             <div class="av-overview-header">
-                <h2 class="av-overview-heading">Official Awesome Lists</h2>
-                <div class="av-overview-search">
-                    <label for="overview-search-input" class="av-sr-only">Search all repositories</label>
-                    <svg class="av-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
-                    <input
-                        type="search"
-                        id="overview-search-input"
-                        class="av-input"
-                        placeholder="Search all repositories..."
-                        autocomplete="off"
-                    >
+                <div class="av-overview-search-wrapper">
+                    <div class="av-overview-search-row">
+                        <div class="av-overview-search">
+                            <label for="overview-search-input" class="av-sr-only">Search all repositories</label>
+                            <svg class="av-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+                            <input
+                                type="search"
+                                id="overview-search-input"
+                                class="av-input"
+                                placeholder="Search all repositories..."
+                                autocomplete="off"
+                            >
+                        </div>
+                        <button type="button" class="av-search-help-btn" data-action="toggle-search-help" aria-label="Search help" aria-expanded="false" aria-controls="search-help-panel">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM6.92 6.085h.001a.749.749 0 1 1-1.342-.67c.169-.339.516-.644.932-.856.413-.213.933-.34 1.489-.34.695 0 1.345.218 1.832.64.495.427.808 1.06.808 1.81 0 .598-.22 1.03-.532 1.395-.293.34-.66.595-.926.776l-.064.046c-.26.185-.454.33-.576.498-.122.168-.158.318-.158.538v.177a.75.75 0 0 1-1.5 0v-.177c0-.467.125-.857.36-1.175.231-.313.544-.537.821-.713l.06-.042c.279-.198.531-.384.732-.612.205-.234.298-.461.298-.756 0-.326-.128-.574-.353-.764-.23-.194-.559-.32-.953-.32-.37 0-.667.093-.882.21a1.22 1.22 0 0 0-.245.177zM9 10.998a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>
+                        </button>
+                    </div>
+                    <fieldset class="av-search-scope">
+                        <legend class="av-sr-only">Search scope</legend>
+                        <label class="av-checkbox">
+                            <input type="checkbox" id="search-scope-title" checked>
+                            <span>Title</span>
+                        </label>
+                        <label class="av-checkbox">
+                            <input type="checkbox" id="search-scope-desc" checked>
+                            <span>Description</span>
+                        </label>
+                    </fieldset>
                 </div>
             </div>
+            <div id="search-help-panel" class="av-search-help" hidden>
+                <p><strong>Search syntax</strong></p>
+                <ul>
+                    <li><code>react</code> - simple keyword</li>
+                    <li><code>react | vue</code> - either term (OR)</li>
+                    <li><code>react testing</code> - both terms (AND)</li>
+                    <li><code>node*</code> - wildcard (matches nodejs, nodemon, etc.)</li>
+                </ul>
+            </div>
             <div class="av-overview-search-info" data-ref="overview-search-info" aria-live="polite" hidden></div>
-            <div class="av-grid" data-ref="overview-search-results" role="list" aria-label="Search results" hidden></div>
+
+            <div class="av-overview-filter-bar" data-ref="overview-filter-bar">
+                <label for="overview-filter-language" class="av-sr-only">Filter by language</label>
+                <select id="overview-filter-language" class="av-select" data-ref="overview-filter-language">
+                    <option value="all">All Languages</option>
+                </select>
+                <label for="overview-filter-health" class="av-sr-only">Minimum health score</label>
+                <select id="overview-filter-health" class="av-select" data-ref="overview-filter-health">
+                    <option value="0">Any Health</option>
+                    <option value="40">Health 40+</option>
+                    <option value="60">Health 60+</option>
+                    <option value="80">Health 80+</option>
+                </select>
+                <button type="button" class="av-btn av-btn--ghost" data-action="reset-overview-filters" aria-label="Reset overview filters">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 1v4.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.2 10.5a6 6 0 1 0 .9-5.5L1.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Reset
+                </button>
+            </div>
 
             <!-- Official Awesome Lists -->
             <button type="button" class="av-segment-toggle av-segment-toggle--open" data-action="toggle-segment" aria-expanded="true" aria-controls="segment-official">
@@ -180,19 +236,6 @@
                 <svg class="av-segment-chevron av-segment-chevron--open av-icon--sm" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
             </button>
             <section id="segment-official" class="av-segment" data-ref="segment-official" aria-label="Official awesome lists">
-                <div class="av-segment-filter-bar">
-                    <label for="official-filter-language" class="av-sr-only">Filter by language</label>
-                    <select id="official-filter-language" class="av-select" data-action="segment-filter" data-segment="official">
-                        <option value="all">All Languages</option>
-                    </select>
-                    <label for="official-filter-health" class="av-sr-only">Minimum health score</label>
-                    <select id="official-filter-health" class="av-select" data-action="segment-filter" data-segment="official">
-                        <option value="0">Any Health</option>
-                        <option value="40">Health 40+</option>
-                        <option value="60">Health 60+</option>
-                        <option value="80">Health 80+</option>
-                    </select>
-                </div>
                 <div class="av-overview-grid" data-ref="overview-grid" role="list" aria-label="Official awesome list categories"></div>
             </section>
 
@@ -205,19 +248,6 @@
             </button>
             <section id="segment-unofficial" class="av-segment" data-ref="segment-unofficial" aria-label="Unofficial awesome lists" hidden>
                 <p class="av-tier-desc">Lists with the awesome badge that are not linked from the official sindresorhus/awesome repository.</p>
-                <div class="av-segment-filter-bar">
-                    <label for="unofficial-filter-language" class="av-sr-only">Filter by language</label>
-                    <select id="unofficial-filter-language" class="av-select" data-action="segment-filter" data-segment="unofficial">
-                        <option value="all">All Languages</option>
-                    </select>
-                    <label for="unofficial-filter-health" class="av-sr-only">Minimum health score</label>
-                    <select id="unofficial-filter-health" class="av-select" data-action="segment-filter" data-segment="unofficial">
-                        <option value="0">Any Health</option>
-                        <option value="40">Health 40+</option>
-                        <option value="60">Health 60+</option>
-                        <option value="80">Health 80+</option>
-                    </select>
-                </div>
                 <div class="av-overview-grid" data-ref="unofficial-grid" role="list" aria-label="Unofficial awesome list categories"></div>
             </section>
 
@@ -230,19 +260,6 @@
             </button>
             <section id="segment-noncanonical" class="av-segment" data-ref="segment-noncanonical" aria-label="Non-canonical awesome lists" hidden>
                 <p class="av-tier-desc">Community-curated lists discovered via search - no awesome badge.</p>
-                <div class="av-segment-filter-bar">
-                    <label for="noncanonical-filter-language" class="av-sr-only">Filter by language</label>
-                    <select id="noncanonical-filter-language" class="av-select" data-action="segment-filter" data-segment="noncanonical">
-                        <option value="all">All Languages</option>
-                    </select>
-                    <label for="noncanonical-filter-health" class="av-sr-only">Minimum health score</label>
-                    <select id="noncanonical-filter-health" class="av-select" data-action="segment-filter" data-segment="noncanonical">
-                        <option value="0">Any Health</option>
-                        <option value="40">Health 40+</option>
-                        <option value="60">Health 60+</option>
-                        <option value="80">Health 80+</option>
-                    </select>
-                </div>
                 <div class="av-overview-grid" data-ref="noncanonical-grid" role="list" aria-label="Non-canonical awesome list categories"></div>
             </section>
         </section>
@@ -345,6 +362,10 @@
                     <option value="60">Health 60+</option>
                     <option value="80">Health 80+</option>
                 </select>
+                <button type="button" class="av-btn av-btn--ghost" data-action="reset-filters" aria-label="Reset all filters">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 1v4.5h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.2 10.5a6 6 0 1 0 .9-5.5L1.5 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Reset
+                </button>
             </div>
             <div class="av-view-controls">
                 <label for="sort-select" class="av-sr-only">Sort by</label>

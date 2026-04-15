@@ -346,10 +346,126 @@
         var bubbleContainer = els["viz-category-bubbles"];
         if (bubbleContainer && vizData.category_bubbles) {
             AVCharts.bubble(bubbleContainer, vizData.category_bubbles, {
-                onClick: function (d) { if (d.id) showDetail(d.id); }
+                onClick: function (d) {
+                    if (d.id) window.open(window.location.pathname + "#cat=" + encodeURIComponent(d.id), "_blank");
+                }
             });
         }
+
+        // License distribution donut
+        var licenseContainer = els["viz-license-donut"];
+        if (licenseContainer && vizData.license_distribution) {
+            AVCharts.donut(licenseContainer, vizData.license_distribution, { centerLabel: "repos" });
+        }
+
+        // Creation year timeline
+        var creationContainer = els["viz-creation-year"];
+        if (creationContainer && vizData.creation_year_histogram) {
+            AVCharts.bar(creationContainer, vizData.creation_year_histogram);
+        }
+
+        // Activity distribution (commits in 90 days)
+        var activityContainer = els["viz-activity-dist"];
+        if (activityContainer && vizData.activity_distribution) {
+            AVCharts.bar(activityContainer, vizData.activity_distribution, { suffix: "repos" });
+        }
+
+        // Fork/star ratio
+        var forkStarContainer = els["viz-fork-star"];
+        if (forkStarContainer && vizData.fork_star_ratio) {
+            AVCharts.bar(forkStarContainer, vizData.fork_star_ratio);
+        }
+
+        // Tier comparison table
+        var tierCompContainer = els["viz-tier-comparison"];
+        if (tierCompContainer && vizData.tier_comparison && vizData.tier_comparison.length) {
+            renderTierComparison(tierCompContainer, vizData.tier_comparison);
+        }
+
+        // Language trend over time
+        var trendContainer = els["viz-language-trend"];
+        if (trendContainer && vizData.language_trend) {
+            AVCharts.stackedArea(trendContainer, vizData.language_trend);
+        }
     }
+
+    function renderTierComparison(container, tiers) {
+        container.textContent = "";
+
+        // Metric columns: [label, key, formatter, higherIsBetter]
+        var metrics = [
+            ["Repos",            "count",           formatNum,  true],
+            ["Categories",       "categories",      formatNum,  true],
+            ["Languages",        "languages",       formatNum,  true],
+            ["Avg Health",       "avg_health",      String,     true],
+            ["Median Health",    "median_health",   String,     true],
+            ["Avg Stars",        "avg_stars",       formatNum,  true],
+            ["Median Stars",     "median_stars",    formatNum,  true],
+            ["Avg Forks",        "avg_forks",       formatNum,  true],
+            ["Avg Open Issues",  "avg_open_issues", String,     false],
+            ["Commits / 90d",    "avg_commits_90d", String,     true],
+            ["Dormant",          "dormant_pct",     function (v) { return v + "%"; }, false],
+            ["Archived",         "archived_pct",    function (v) { return v + "%"; }, false]
+        ];
+
+        var tierLabels = { "official": "Official", "unofficial": "Unofficial", "non-canonical": "Non-canonical" };
+
+        var table = document.createElement("table");
+        table.className = "av-tier-table av-tier-table--transposed";
+        table.setAttribute("aria-label", "Tier comparison");
+
+        // Header: Tier | metric1 | metric2 | ...
+        var thead = document.createElement("thead");
+        var headRow = document.createElement("tr");
+        var thTier = document.createElement("th");
+        thTier.scope = "col";
+        thTier.textContent = "Tier";
+        headRow.appendChild(thTier);
+        for (var mi = 0; mi < metrics.length; mi++) {
+            var th = document.createElement("th");
+            th.scope = "col";
+            th.textContent = metrics[mi][0];
+            headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        // Body: one row per tier
+        var tbody = document.createElement("tbody");
+        for (var ti = 0; ti < tiers.length; ti++) {
+            var tr = document.createElement("tr");
+            var tdLabel = document.createElement("td");
+            tdLabel.className = "av-tier-table-metric";
+            tdLabel.textContent = tierLabels[tiers[ti].tier] || tiers[ti].tier;
+            tr.appendChild(tdLabel);
+
+            for (var ci = 0; ci < metrics.length; ci++) {
+                var m = metrics[ci];
+                var key = m[1];
+                var fmt = m[2];
+                var higherBetter = m[3];
+                var td = document.createElement("td");
+                var val = tiers[ti][key] != null ? tiers[ti][key] : 0;
+                td.textContent = fmt(val);
+
+                // Find best value across tiers for this metric
+                var vals = [];
+                for (var vi = 0; vi < tiers.length; vi++) {
+                    vals.push(tiers[vi][key] != null ? tiers[vi][key] : 0);
+                }
+                var bestVal = higherBetter ? Math.max.apply(null, vals) : Math.min.apply(null, vals);
+                if (val === bestVal && tiers.length > 1) {
+                    td.className = "av-tier-table-best";
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+
 
     // Default bucket definitions (overridden by viz-data.json if available)
     var bucketDefs = {
@@ -512,17 +628,23 @@
         noncanonical: { language: "all", minHealth: 0 }
     };
 
-    function populateSegmentLanguages(segKey) {
-        var sel = document.getElementById(segKey + "-filter-language");
+    // Unified overview filter state
+    var overviewFilter = { language: "all", minHealth: 0 };
+
+    function populateOverviewLanguages() {
+        var sel = els["overview-filter-language"];
         if (!sel) return;
         while (sel.options.length > 1) sel.remove(1);
 
-        var cats = (allData && allData[SEGMENTS[segKey].dataKey]) || [];
         var langCounts = {};
-        for (var c = 0; c < cats.length; c++) {
-            var topLangs = cats[c].top_languages || [];
-            for (var l = 0; l < topLangs.length; l++) {
-                langCounts[topLangs[l].name] = (langCounts[topLangs[l].name] || 0) + topLangs[l].count;
+        var keys = ["official", "unofficial", "noncanonical"];
+        for (var k = 0; k < keys.length; k++) {
+            var cats = (allData && allData[SEGMENTS[keys[k]].dataKey]) || [];
+            for (var c = 0; c < cats.length; c++) {
+                var topLangs = cats[c].top_languages || [];
+                for (var l = 0; l < topLangs.length; l++) {
+                    langCounts[topLangs[l].name] = (langCounts[topLangs[l].name] || 0) + topLangs[l].count;
+                }
             }
         }
         var langs = Object.keys(langCounts).sort(function (a, b) {
@@ -552,7 +674,7 @@
         }
         if (toggleBtn) toggleBtn.hidden = false;
 
-        var f = segmentFilters[segKey];
+        var f = overviewFilter;
         var filtered = cats;
         if (f.language !== "all") {
             filtered = filtered.filter(function (cat) {
@@ -606,35 +728,12 @@
             els["last-updated"].textContent = "Updated " + relativeTime(meta.last_updated);
         }
 
-        // Tier breakdown table - use pre-computed counts from meta
+        // Tier counts stored for segment headers
         var tiers = [
             { label: "Official",       cats: (data.categories || []).length,               repos: tc.official || 0 },
             { label: "Unofficial",     cats: (data.unofficial_categories || []).length,     repos: tc.unofficial || 0 },
             { label: "Non-canonical",  cats: (data.non_canonical_categories || []).length,  repos: tc.noncanonical || 0 }
         ];
-        var tbody = els["tier-summary-body"];
-        if (tbody) {
-            tbody.textContent = "";
-            var totalCats = 0, totalRepos = 0;
-            for (var ti = 0; ti < tiers.length; ti++) {
-                totalCats += tiers[ti].cats;
-                totalRepos += tiers[ti].repos;
-                var tr = document.createElement("tr");
-                var th = document.createElement("th");
-                th.scope = "row";
-                th.textContent = tiers[ti].label;
-                tr.appendChild(th);
-                var tdCats = document.createElement("td");
-                tdCats.textContent = formatNum(tiers[ti].cats);
-                tr.appendChild(tdCats);
-                var tdRepos = document.createElement("td");
-                tdRepos.textContent = formatNum(tiers[ti].repos);
-                tr.appendChild(tdRepos);
-                tbody.appendChild(tr);
-            }
-            if (els["tier-total-cats"]) els["tier-total-cats"].textContent = formatNum(totalCats);
-            if (els["tier-total-repos"]) els["tier-total-repos"].textContent = formatNum(totalRepos);
-        }
     }
 
     function updateLiveStats() {
@@ -672,16 +771,11 @@
         els["detail-screen"].hidden = true;
         els.overviewSearchInput.value = "";
         clearOverviewSearch();
-        // Reset segment filters
-        var keys = ["official", "unofficial", "noncanonical"];
-        for (var k = 0; k < keys.length; k++) {
-            segmentFilters[keys[k]] = { language: "all", minHealth: 0 };
-            var langSel = document.getElementById(keys[k] + "-filter-language");
-            var healthSel = document.getElementById(keys[k] + "-filter-health");
-            if (langSel) langSel.value = "all";
-            if (healthSel) healthSel.value = "0";
-            populateSegmentLanguages(keys[k]);
-        }
+        // Reset overview filter
+        overviewFilter = { language: "all", minHealth: 0 };
+        if (els["overview-filter-language"]) els["overview-filter-language"].value = "all";
+        if (els["overview-filter-health"]) els["overview-filter-health"].value = "0";
+        populateOverviewLanguages();
         renderOverview();
         saveToHash();
     }
@@ -840,8 +934,13 @@
     // Supports: * (wildcard), | (or), & or space (and), case-insensitive
     var searchTokens = null;
 
+    // Scoped search: separate title vs description tokens
+    var searchScope = { title: true, desc: true };
+    var scopedTokens = null;
+
     function buildSearchIndex() {
         searchTokens = new Array(state.repos.length);
+        scopedTokens = new Array(state.repos.length);
         for (var i = 0; i < state.repos.length; i++) {
             var r = state.repos[i];
             searchTokens[i] = (
@@ -855,14 +954,28 @@
                 (r.subcategory || "") + " " +
                 (r.kw || "")
             ).toLowerCase();
+            scopedTokens[i] = {
+                title: ((r.full_name || "") + " " + (r.name || "") + " " + (r.owner || "")).toLowerCase(),
+                desc: ((r.description || "") + " " + (r.topics || []).join(" ") + " " + (r.kw || "")).toLowerCase(),
+                meta: ((r.language || "") + " " + (r.category || "") + " " + (r.subcategory || "")).toLowerCase()
+            };
         }
     }
 
-    function search(query) {
+    function getScopedHaystack(idx) {
+        var t = scopedTokens[idx];
+        var parts = t.meta;
+        if (searchScope.title) parts = t.title + " " + parts;
+        if (searchScope.desc) parts = t.desc + " " + parts;
+        return parts;
+    }
+
+    function search(query, scoped) {
         if (!searchTokens) buildSearchIndex();
         if (!query) return state.repos.slice();
 
         var MAX_RESULTS = 1000;
+        var useScoped = scoped && !(searchScope.title && searchScope.desc);
 
         // & is explicit AND (same as space)
         var normalized = query.replace(/&/g, " ");
@@ -892,7 +1005,7 @@
         var scored = [];
 
         for (var i = 0; i < state.repos.length; i++) {
-            var haystack = searchTokens[i];
+            var haystack = useScoped ? getScopedHaystack(i) : searchTokens[i];
             var matched = false;
             var matchScore = 0;
 
@@ -1421,6 +1534,8 @@
                     if (action === "toggle-detail-viz") renderDetailViz(state.category);
                 }
             } else if (action === "toggle-segment") {
+                // While overview search is active, segments are locked
+                if (overviewSearchActive) return;
                 var segId = btn.getAttribute("aria-controls");
                 var segSection = document.getElementById(segId);
                 if (!segSection) return;
@@ -1435,24 +1550,51 @@
                 if (!segExpanded) {
                     var segTier = segId.replace("segment-", "");
                     if (TIER_FILES[segTier] && !tierLoaded[segTier]) {
-                        ensureTierRepos(segTier).then(function () { updateLiveStats(); });
+                        btn.classList.add("is-loading");
+                        ensureTierRepos(segTier).then(function () {
+                            btn.classList.remove("is-loading");
+                            updateLiveStats();
+                        }).catch(function () {
+                            btn.classList.remove("is-loading");
+                        });
                     }
                 }
+            } else if (action === "toggle-search-help") {
+                var helpPanel = document.getElementById("search-help-panel");
+                if (helpPanel) {
+                    var helpExpanded = btn.getAttribute("aria-expanded") === "true";
+                    helpPanel.hidden = helpExpanded;
+                    btn.setAttribute("aria-expanded", helpExpanded ? "false" : "true");
+                }
+            } else if (action === "reset-filters") {
+                state.subcategory = "all";
+                state.language = "all";
+                state.minHealth = 0;
+                state.query = "";
+                state.page = 1;
+                els.searchInput.value = "";
+                els.filterSubcategory.value = "all";
+                els.filterLanguage.value = "all";
+                els.filterHealth.value = "0";
+                applyAndRender();
+            } else if (action === "reset-overview-filters") {
+                overviewFilter = { language: "all", minHealth: 0 };
+                if (els["overview-filter-language"]) els["overview-filter-language"].value = "all";
+                if (els["overview-filter-health"]) els["overview-filter-health"].value = "0";
+                renderOverview();
             }
         });
 
-        // Segment filters (delegated)
-        document.addEventListener("change", function (e) {
-            var sel = e.target.closest("[data-action='segment-filter']");
-            if (!sel) return;
-            var segKey = sel.getAttribute("data-segment");
-            if (!segKey || !segmentFilters[segKey]) return;
-            var langSel = document.getElementById(segKey + "-filter-language");
-            var healthSel = document.getElementById(segKey + "-filter-health");
-            segmentFilters[segKey].language = langSel ? langSel.value : "all";
-            segmentFilters[segKey].minHealth = healthSel ? parseInt(healthSel.value, 10) || 0 : 0;
-            renderSegment(segKey);
-        });
+        // Overview unified filter bar
+        var ovLangSel = els["overview-filter-language"];
+        var ovHealthSel = els["overview-filter-health"];
+        function applyOverviewFilter() {
+            overviewFilter.language = ovLangSel ? ovLangSel.value : "all";
+            overviewFilter.minHealth = ovHealthSel ? parseInt(ovHealthSel.value, 10) || 0 : 0;
+            renderOverview();
+        }
+        if (ovLangSel) ovLangSel.addEventListener("change", applyOverviewFilter);
+        if (ovHealthSel) ovHealthSel.addEventListener("change", applyOverviewFilter);
 
         // Resource subcategory filter
         if (els.resourceFilterSubcategory) {
@@ -1564,9 +1706,37 @@
 
         // Overview search
         var overviewDebounce = null;
+        var scopeTitleCb = document.getElementById("search-scope-title");
+        var scopeDescCb = document.getElementById("search-scope-desc");
+
+        function readSearchScope() {
+            searchScope.title = scopeTitleCb.checked;
+            searchScope.desc = scopeDescCb.checked;
+            // At least one must be checked
+            if (!searchScope.title && !searchScope.desc) {
+                searchScope.title = true;
+                searchScope.desc = true;
+                scopeTitleCb.checked = true;
+                scopeDescCb.checked = true;
+            }
+        }
+
+        function retriggerOverviewSearch() {
+            readSearchScope();
+            var val = els.overviewSearchInput.value.trim();
+            if (val.length > 0) {
+                var allLoaded = tierLoaded.official && tierLoaded.unofficial && tierLoaded.noncanonical;
+                if (allLoaded) performOverviewSearch(val);
+            }
+        }
+
+        scopeTitleCb.addEventListener("change", retriggerOverviewSearch);
+        scopeDescCb.addEventListener("change", retriggerOverviewSearch);
+
         els.overviewSearchInput.addEventListener("input", function () {
             clearTimeout(overviewDebounce);
             var val = els.overviewSearchInput.value.trim();
+            readSearchScope();
             overviewDebounce = setTimeout(function () {
                 if (val.length === 0) {
                     clearOverviewSearch();
@@ -1576,11 +1746,9 @@
                     if (allLoaded) {
                         performOverviewSearch(val);
                     } else {
-                        var grid = els["overview-search-results"];
                         var info = els["overview-search-info"];
-                        grid.innerHTML = '<div class="av-loading">Loading data for search...</div>';
-                        grid.hidden = false;
-                        info.hidden = true;
+                        info.textContent = "Loading data for search...";
+                        info.hidden = false;
                         Promise.all([ensureAllTiers(), ensureAllResources()]).then(function () {
                             // Re-check the input value hasn't changed
                             var current = els.overviewSearchInput.value.trim();
@@ -1772,46 +1940,102 @@
         return matched;
     }
 
+    var overviewSearchActive = false;
+
     function performOverviewSearch(query) {
         if (!searchTokens) buildSearchIndex();
 
-        var results = search(query).slice(0, 60);
+        var results = search(query, true).slice(0, 200);
         var resResults = searchResources(query).slice(0, 20);
 
-        var grid = els["overview-search-results"];
         var info = els["overview-search-info"];
-        grid.textContent = "";
 
-        if (results.length === 0 && resResults.length === 0) {
-            grid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No results found</div><p>Try a different search term</p></div>';
-        } else {
-            var frag = document.createDocumentFragment();
-            for (var i = 0; i < results.length; i++) {
-                frag.appendChild(createCard(results[i], true));
-            }
-            if (resResults.length > 0) {
-                var resHeading = document.createElement("div");
-                resHeading.className = "av-search-section-label";
-                resHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> Resource Links (' + resResults.length + ')';
-                frag.appendChild(resHeading);
-                for (var j = 0; j < resResults.length; j++) {
-                    frag.appendChild(createSearchResourceItem(resResults[j]));
+        // Group repo results by tier
+        var tierResults = { official: [], unofficial: [], noncanonical: [] };
+        for (var i = 0; i < results.length; i++) {
+            var tier = catTierMap[results[i].category] || "official";
+            tierResults[tier].push(results[i]);
+        }
+
+        // Group resource results by tier
+        var tierResResults = { official: [], unofficial: [], noncanonical: [] };
+        for (var ri = 0; ri < resResults.length; ri++) {
+            var resTier = catTierMap[resResults[ri].category] || "official";
+            tierResResults[resTier].push(resResults[ri]);
+        }
+
+        overviewSearchActive = true;
+
+        // Hide overview filter bar during search
+        if (els["overview-filter-bar"]) els["overview-filter-bar"].hidden = true;
+
+        var segKeys = ["official", "unofficial", "noncanonical"];
+        for (var s = 0; s < segKeys.length; s++) {
+            var segKey = segKeys[s];
+            var seg = SEGMENTS[segKey];
+            var grid = els[seg.gridRef];
+            var toggleBtn = document.querySelector("[aria-controls='" + seg.sectionRef + "']");
+            var section = els[seg.sectionRef];
+            var repos = tierResults[segKey];
+            var resources = tierResResults[segKey];
+            var hasResults = repos.length > 0 || resources.length > 0;
+
+            if (!toggleBtn || !section || !grid) continue;
+
+            if (hasResults) {
+                // Show and expand this segment
+                toggleBtn.hidden = false;
+                section.hidden = false;
+                toggleBtn.setAttribute("aria-expanded", "true");
+                toggleBtn.classList.add("av-segment-toggle--open");
+                var chevron = toggleBtn.querySelector(".av-segment-chevron");
+                if (chevron) chevron.classList.add("av-segment-chevron--open");
+
+                // Update count in toggle
+                var countEl = els[segKey + "-count"];
+                if (countEl) countEl.textContent = repos.length + " repos" + (resources.length ? ", " + resources.length + " resources" : "");
+
+                // Render matching repos in the segment grid
+                grid.textContent = "";
+                var frag = document.createDocumentFragment();
+                for (var r = 0; r < repos.length; r++) {
+                    frag.appendChild(createCard(repos[r], true));
                 }
+                if (resources.length > 0) {
+                    var resHeading = document.createElement("div");
+                    resHeading.className = "av-search-section-label";
+                    resHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-link"/></svg> Resource Links (' + resources.length + ')';
+                    frag.appendChild(resHeading);
+                    for (var j = 0; j < resources.length; j++) {
+                        frag.appendChild(createSearchResourceItem(resources[j]));
+                    }
+                }
+                grid.appendChild(frag);
+            } else {
+                // Hide segment if no results
+                toggleBtn.hidden = true;
+                section.hidden = true;
             }
-            grid.appendChild(frag);
         }
 
         var totalCount = results.length + resResults.length;
+        if (totalCount === 0) {
+            // Show a "no results" message in the first segment
+            var firstSeg = SEGMENTS.official;
+            var firstGrid = els[firstSeg.gridRef];
+            var firstToggle = document.querySelector("[aria-controls='" + firstSeg.sectionRef + "']");
+            var firstSection = els[firstSeg.sectionRef];
+            if (firstToggle) firstToggle.hidden = false;
+            if (firstSection) firstSection.hidden = false;
+            if (firstToggle) {
+                firstToggle.setAttribute("aria-expanded", "true");
+                firstToggle.classList.add("av-segment-toggle--open");
+            }
+            if (firstGrid) firstGrid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No results found</div><p>Try a different search term</p></div>';
+        }
+
         info.textContent = totalCount + " matching results" + (resResults.length ? " (" + results.length + " repos, " + resResults.length + " resources)" : "");
         info.hidden = false;
-        grid.hidden = false;
-        // Hide all segments while showing search results
-        var segKeys = ["segment-official", "segment-unofficial", "segment-noncanonical"];
-        for (var s = 0; s < segKeys.length; s++) {
-            if (els[segKeys[s]]) els[segKeys[s]].hidden = true;
-        }
-        var toggleBtns = document.querySelectorAll("[data-action='toggle-segment']");
-        for (var b = 0; b < toggleBtns.length; b++) toggleBtns[b].hidden = true;
     }
 
     function createSearchResourceItem(res) {
@@ -1833,18 +2057,12 @@
     }
 
     function clearOverviewSearch() {
-        els["overview-search-results"].hidden = true;
-        els["overview-search-results"].textContent = "";
+        overviewSearchActive = false;
         els["overview-search-info"].hidden = true;
-        // Restore segment visibility based on toggle state
-        var toggleBtns = document.querySelectorAll("[data-action='toggle-segment']");
-        for (var b = 0; b < toggleBtns.length; b++) {
-            toggleBtns[b].hidden = false;
-            var segId = toggleBtns[b].getAttribute("aria-controls");
-            var isExpanded = toggleBtns[b].getAttribute("aria-expanded") === "true";
-            var segEl = document.getElementById(segId);
-            if (segEl) segEl.hidden = !isExpanded;
-        }
+        // Restore overview filter bar
+        if (els["overview-filter-bar"]) els["overview-filter-bar"].hidden = false;
+        // Re-render all segments with category cards and restore toggle state
+        renderOverview();
     }
 
     // ----------------------------------------------------------- Resources
