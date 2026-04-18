@@ -1581,7 +1581,8 @@
                 overviewFilter = { language: "all", minHealth: 0 };
                 if (els["overview-filter-language"]) els["overview-filter-language"].value = "all";
                 if (els["overview-filter-health"]) els["overview-filter-health"].value = "0";
-                renderOverview();
+                els.overviewSearchInput.value = "";
+                clearOverviewSearch();
             }
         });
 
@@ -1591,6 +1592,13 @@
         function applyOverviewFilter() {
             overviewFilter.language = ovLangSel ? ovLangSel.value : "all";
             overviewFilter.minHealth = ovHealthSel ? parseInt(ovHealthSel.value, 10) || 0 : 0;
+            if (overviewSearchActive) {
+                var val = els.overviewSearchInput.value.trim();
+                if (val.length > 0) {
+                    performOverviewSearch(val);
+                    return;
+                }
+            }
             renderOverview();
         }
         if (ovLangSel) ovLangSel.addEventListener("change", applyOverviewFilter);
@@ -1942,13 +1950,79 @@
 
     var overviewSearchActive = false;
 
+    function searchCategories(query) {
+        if (!allData || !query) return [];
+        var q = query.toLowerCase();
+        var orGroups = q.replace(/&/g, " ").split("|");
+        var matched = [];
+
+        var allCats = (allData.categories || [])
+            .concat(allData.unofficial_categories || [])
+            .concat(allData.non_canonical_categories || []);
+
+        for (var i = 0; i < allCats.length; i++) {
+            var cat = allCats[i];
+            var haystack = ((cat.name || "") + " " + (cat.source_repo || "") + " " + (cat.id || "")).toLowerCase();
+
+            for (var g = 0; g < orGroups.length; g++) {
+                var terms = orGroups[g].trim().split(/\s+/).filter(Boolean);
+                if (!terms.length) continue;
+                var allMatch = true;
+                for (var t = 0; t < terms.length; t++) {
+                    var pattern = terms[t]
+                        .replace(/[.+?^${}()[\]\\]/g, "\\$&")
+                        .replace(/\*/g, ".*");
+                    try {
+                        if (!new RegExp(pattern).test(haystack)) { allMatch = false; break; }
+                    } catch (e) {
+                        if (haystack.indexOf(terms[t]) === -1) { allMatch = false; break; }
+                    }
+                }
+                if (allMatch) { matched.push(cat); break; }
+            }
+        }
+        return matched;
+    }
+
     function performOverviewSearch(query) {
         if (!searchTokens) buildSearchIndex();
 
-        var results = search(query, true).slice(0, 200);
+        var rawResults = search(query, true).slice(0, 200);
         var resResults = searchResources(query).slice(0, 20);
 
+        // Search categories (lists) by name and source_repo
+        var listResults = searchCategories(query);
+
+        // Apply language/health filters to repo results only (not resources or lists)
+        var f = overviewFilter;
+        var results = [];
+        for (var fi = 0; fi < rawResults.length; fi++) {
+            var repo = rawResults[fi];
+            if (f.language !== "all" && repo.language !== f.language) continue;
+            if (f.minHealth > 0 && (repo.health || 0) < f.minHealth) continue;
+            results.push(repo);
+        }
+
+        // Apply language/health filters to list results too
+        var filteredLists = [];
+        for (var li = 0; li < listResults.length; li++) {
+            var cat = listResults[li];
+            if (f.language !== "all") {
+                var hasLang = (cat.top_languages || []).some(function (l) { return l.name === f.language; });
+                if (!hasLang) continue;
+            }
+            if (f.minHealth > 0 && (cat.avg_health || 0) < f.minHealth) continue;
+            filteredLists.push(cat);
+        }
+
         var info = els["overview-search-info"];
+
+        // Group list results by tier
+        var tierListResults = { official: [], unofficial: [], noncanonical: [] };
+        for (var tl = 0; tl < filteredLists.length; tl++) {
+            var listTier = catTierMap[filteredLists[tl].id] || "official";
+            tierListResults[listTier].push(filteredLists[tl]);
+        }
 
         // Group repo results by tier
         var tierResults = { official: [], unofficial: [], noncanonical: [] };
@@ -1966,9 +2040,7 @@
 
         overviewSearchActive = true;
 
-        // Hide overview filter bar during search
-        if (els["overview-filter-bar"]) els["overview-filter-bar"].hidden = true;
-
+        // Language/health filters apply to repo results, not resources
         var segKeys = ["official", "unofficial", "noncanonical"];
         for (var s = 0; s < segKeys.length; s++) {
             var segKey = segKeys[s];
@@ -1976,9 +2048,10 @@
             var grid = els[seg.gridRef];
             var toggleBtn = document.querySelector("[aria-controls='" + seg.sectionRef + "']");
             var section = els[seg.sectionRef];
+            var lists = tierListResults[segKey];
             var repos = tierResults[segKey];
             var resources = tierResResults[segKey];
-            var hasResults = repos.length > 0 || resources.length > 0;
+            var hasResults = lists.length > 0 || repos.length > 0 || resources.length > 0;
 
             if (!toggleBtn || !section || !grid) continue;
 
@@ -1993,14 +2066,36 @@
 
                 // Update count in toggle
                 var countEl = els[segKey + "-count"];
-                if (countEl) countEl.textContent = repos.length + " repos" + (resources.length ? ", " + resources.length + " resources" : "");
+                var countParts = [];
+                if (lists.length) countParts.push(lists.length + " lists");
+                if (repos.length) countParts.push(repos.length + " repos");
+                if (resources.length) countParts.push(resources.length + " resources");
+                if (countEl) countEl.textContent = countParts.join(", ");
 
-                // Render matching repos in the segment grid
+                // Build the grid with section labels
                 grid.textContent = "";
                 var frag = document.createDocumentFragment();
-                for (var r = 0; r < repos.length; r++) {
-                    frag.appendChild(createCard(repos[r], true));
+
+                if (lists.length > 0) {
+                    var listHeading = document.createElement("div");
+                    listHeading.className = "av-search-section-label av-search-section-label--first";
+                    listHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-repo"/></svg> Lists (' + lists.length + ')';
+                    frag.appendChild(listHeading);
+                    for (var cl = 0; cl < lists.length; cl++) {
+                        frag.appendChild(createCategoryCard(lists[cl]));
+                    }
                 }
+
+                if (repos.length > 0) {
+                    var repoHeading = document.createElement("div");
+                    repoHeading.className = "av-search-section-label" + (lists.length === 0 ? " av-search-section-label--first" : "");
+                    repoHeading.innerHTML = '<svg class="av-icon--sm" aria-hidden="true"><use href="#icon-star"/></svg> Repositories (' + repos.length + ')';
+                    frag.appendChild(repoHeading);
+                    for (var r = 0; r < repos.length; r++) {
+                        frag.appendChild(createCard(repos[r], true));
+                    }
+                }
+
                 if (resources.length > 0) {
                     var resHeading = document.createElement("div");
                     resHeading.className = "av-search-section-label";
@@ -2018,7 +2113,7 @@
             }
         }
 
-        var totalCount = results.length + resResults.length;
+        var totalCount = filteredLists.length + results.length + resResults.length;
         if (totalCount === 0) {
             // Show a "no results" message in the first segment
             var firstSeg = SEGMENTS.official;
@@ -2034,7 +2129,11 @@
             if (firstGrid) firstGrid.innerHTML = '<div class="av-empty"><div class="av-empty-title">No results found</div><p>Try a different search term</p></div>';
         }
 
-        info.textContent = totalCount + " matching results" + (resResults.length ? " (" + results.length + " repos, " + resResults.length + " resources)" : "");
+        var infoParts = [];
+        if (filteredLists.length) infoParts.push(filteredLists.length + " lists");
+        if (results.length) infoParts.push(results.length + " repos");
+        if (resResults.length) infoParts.push(resResults.length + " resources");
+        info.textContent = totalCount + " matching results" + (infoParts.length > 1 ? " (" + infoParts.join(", ") + ")" : "");
         info.hidden = false;
     }
 
@@ -2059,8 +2158,6 @@
     function clearOverviewSearch() {
         overviewSearchActive = false;
         els["overview-search-info"].hidden = true;
-        // Restore overview filter bar
-        if (els["overview-filter-bar"]) els["overview-filter-bar"].hidden = false;
         // Re-render all segments with category cards and restore toggle state
         renderOverview();
     }
