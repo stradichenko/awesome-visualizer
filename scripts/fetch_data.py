@@ -899,6 +899,28 @@ def main():
             "subcategory_count": len(cat_subcats.get(cid, set())),
             "top_languages": [{"name": name, "count": c} for name, c in top_langs],
         })
+    # Add resource-only categories: lists whose repos were all deduped away
+    # but still contributed resource links.
+    res_cat_ids = set()
+    for res in unique_resources:
+        res_cat_ids.add(res.get("category", ""))
+    existing_cat_ids = {c["id"] for c in categories}
+    for cid in sorted(res_cat_ids - existing_cat_ids):
+        meta = cat_meta.get(cid)
+        if not meta:
+            continue
+        categories.append({
+            "id": cid,
+            "name": meta.get("name", cid.replace("-", " ").title()),
+            "count": 0,
+            "source_repo": meta.get("source_repo", ""),
+            "avg_health": 0,
+            "is_awesome_list": meta.get("is_awesome_list", False),
+            "tier": "official",
+            "subcategory_count": 0,
+            "top_languages": [],
+        })
+
     categories.sort(key=lambda c: c["name"])
 
     # Build subcategory summary grouped by category

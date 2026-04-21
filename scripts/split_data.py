@@ -68,11 +68,18 @@ def main():
         bucket = TIER_MAP.get(tier_raw, "official")
         repos_by_tier[bucket].append(repo)
 
-    # Partition resources by the tier of their parent category
+    # Partition resources by the tier of their parent category.
+    # Drop orphaned resources whose category no longer exists.
     res_by_tier = {"official": [], "unofficial": [], "noncanonical": []}
+    dropped_resources = 0
     for res in data.get("resources", []):
-        bucket = cat_tier.get(res.get("category", ""), "official")
-        res_by_tier[bucket].append(res)
+        cid = res.get("category", "")
+        if cid not in cat_tier:
+            dropped_resources += 1
+            continue
+        res_by_tier[cat_tier[cid]].append(res)
+    if dropped_resources:
+        print(f"  Dropped {dropped_resources} orphaned resources (no matching category)")
 
     # Build the lightweight index (no repos, no resources)
     meta = data.get("meta", {})

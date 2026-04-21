@@ -197,20 +197,35 @@ def fetch_repo_readme(full_name, token):
 
 
 def extract_github_links(text):
-    """Extract GitHub repo links from markdown text."""
+    """Extract GitHub repo links from markdown and HTML text.
+
+    Matches markdown links [text](https://github.com/owner/repo...) and
+    HTML anchors <a href="https://github.com/owner/repo...">.  Sub-path
+    links (owner/repo/tree/...) are normalised to owner/repo for dedup so
+    monorepo-based awesome lists are counted correctly.
+    """
     links = []
     seen = set()
-    for _, repo_path in re.findall(
-        r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
-        text,
-    ):
-        clean = repo_path.strip("/").lower()
-        if clean.count("/") == 1 and clean not in seen:
-            owner = clean.split("/")[0]
-            if owner in NOT_REPO_PREFIXES:
+
+    # Match both markdown [...](url) and HTML <a href="url"> patterns
+    patterns = [
+        r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/[^)]*)?)\)",
+        r'<a\s[^>]*href="https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/[^"]*)?)"',
+    ]
+
+    for pat in patterns:
+        for match in re.finditer(pat, text):
+            # Markdown pattern has 2 groups, HTML has 1
+            repo_path = match.group(match.lastindex)
+            parts = repo_path.strip("/").split("/")
+            if len(parts) < 2:
                 continue
-            seen.add(clean)
-            links.append(repo_path.strip("/"))
+            owner_repo = f"{parts[0]}/{parts[1]}".lower()
+            if parts[0].lower() in NOT_REPO_PREFIXES:
+                continue
+            if owner_repo not in seen:
+                seen.add(owner_repo)
+                links.append(f"{parts[0]}/{parts[1]}")
     return links
 
 
@@ -496,10 +511,14 @@ def search_awesome_repos(token, exclude_set):
         ("topic:awesome-list stars:>=" + str(MIN_STARS) + " fork:false", "stars", "desc"),
         ("topic:curated-list stars:>=" + str(MIN_STARS) + " fork:false", "stars", "desc"),
         # Star-range buckets to fill the dead zone between asc/desc extremes
-        ("awesome in:name stars:200..500 fork:false", "stars", "desc"),
-        ("awesome in:name stars:500..1000 fork:false", "stars", "desc"),
+        ("awesome in:name stars:50..200 fork:false", "stars", "desc"),
+        ("awesome in:name stars:200..350 fork:false", "stars", "desc"),
+        ("awesome in:name stars:350..500 fork:false", "stars", "desc"),
+        ("awesome in:name stars:500..750 fork:false", "stars", "desc"),
+        ("awesome in:name stars:750..1000 fork:false", "stars", "desc"),
         ("awesome in:name stars:1000..2000 fork:false", "stars", "desc"),
         ("awesome in:name stars:2000..5000 fork:false", "stars", "desc"),
+        ("awesome in:name stars:5000..50000 fork:false", "stars", "desc"),
     ]
 
     for query_str, sort_by, order in queries:
@@ -892,6 +911,11 @@ def main():
     all_new = sorted(uo_repos + nc_repos, key=lambda r: -r["stars"])
     existing_repos.extend(all_new)
     existing["repos"] = existing_repos
+
+    # Drop resources whose category was removed by the health filter
+    surviving_cats = {c["id"] for c in uo_cats} | {c["id"] for c in nc_cats}
+    uo_resources = [r for r in uo_resources if r.get("category") in surviving_cats]
+    nc_resources = [r for r in nc_resources if r.get("category") in surviving_cats]
 
     # Deduplicate and merge resources
     all_new_resources = uo_resources + nc_resources
