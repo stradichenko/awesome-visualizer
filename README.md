@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="site/logo.svg" alt="Awesome Visualizer logo" width="200">
+  <a href="https://stradichenko.github.io/awesome-visualizer/">
+    <img src="site/logo.svg" alt="Awesome Visualizer logo" width="200">
+  </a>
 </p>
 
-<h1 align="center">Awesome Visualizer</h1>
+<h1 align="center"><a href="https://stradichenko.github.io/awesome-visualizer/">Awesome Visualizer</a></h1>
 
 <h3 align="center">
 
@@ -33,11 +35,6 @@
 
 </h4>
 
-<h3 align="center">
-
-[Site!](https://stradichenko.github.io/awesome-visualizer/)
-
-</h3>
 
 A data-driven explorer for the [sindresorhus/awesome](https://github.com/sindresorhus/awesome) ecosystem. Browse, search, filter, and compare awesome list repositories with rich metrics -- stars, forks, commit activity, health scores -- all on a fast static site hosted on GitHub Pages.
 
