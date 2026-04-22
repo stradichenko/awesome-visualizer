@@ -38,21 +38,6 @@
 
 A data-driven explorer for the [sindresorhus/awesome](https://github.com/sindresorhus/awesome) ecosystem. Browse, search, filter, and compare awesome list repositories with rich metrics: stars, forks, commit activity, health scores; all on a fast static site hosted on GitHub Pages.
 
-## Health score
-
-A 0-100 heuristic computed per repository from eight weighted signals (max total: 100 pts).
-
-| Signal | Max pts | What it measures |
-| ------ | ------: | ---------------- |
-| Stars | 20 | Adoption and visibility |
-| Commits (90 days) | 20 | Recent development activity |
-| Recency of last push | 20 | How long ago the repo was last touched |
-| Not archived | 10 | Project is still alive |
-| License present | 8 | Reusability signal |
-| Open PRs | 8 | Active collaboration and demand |
-| Fork-to-star ratio | 7 | Downstream adoption and community use |
-| Description present | 7 | Basic maintenance hygiene |
-
 ## Features
 
 - Filterable card grid and table views
@@ -88,6 +73,23 @@ Each surviving list is placed into one of three tiers, which control how the sit
 - **Unofficial**: lists carrying the awesome.re badge but not linked from the official index. They follow the same conventions; they just haven't been submitted or accepted into the master list.
 - **Non-canonical**: lists that look like curated resource collections (10+ links, multiple section headings, good link density) but do not carry the awesome.re badge. Often topic lists that predate or simply don't follow the awesome format.
 
+
+## Health score
+
+A 0-100 heuristic computed per repository from eight weighted signals (max total: 100 pts).
+
+| Signal | Max pts | What it measures |
+| ------ | ------: | ---------------- |
+| Stars | 20 | Adoption and visibility |
+| Commits (90 days) | 20 | Recent development activity |
+| Recency of last push | 20 | How long ago the repo was last touched |
+| Not archived | 10 | Project is still alive |
+| License present | 8 | Reusability signal |
+| Open PRs | 8 | Active collaboration and demand |
+| Fork-to-star ratio | 7 | Downstream adoption and community use |
+| Description present | 7 | Basic maintenance hygiene |
+r
+
 ### Subcategories
 
 Within each category, repos are grouped by the section heading (`##`/`###`/`####`) they appeared under in the source README. Generic sections (`Contents`, `License`, `Contributing`, `Footnotes`) are stripped. Repos that appear before any heading land in `General`.
@@ -96,16 +98,16 @@ Within each category, repos are grouped by the section heading (`##`/`###`/`####
 
 A few things worth knowing about the data:
 
-- **GitHub Search 1000-result cap.** The Search API returns at most 1000 results per query, regardless of paging. The pipeline works around this with multiple star-range bucket queries (`50..200`, `200..350`, ..., `5000..50000`), but a list outside those buckets or whose star count straddles a boundary on a given day may be missed.
-- **Discovery is name-biased.** Non-canonical discovery requires either `awesome` in the repo name or membership in the `awesome-list`/`curated-list` topics. A high-quality curated list with neither will not be found.
-- **Star floor of 50.** Lists below 50 stars are filtered out of search results entirely.
-- **Category-level health filter (>= 50 avg).** A list whose linked repos average below 50 health is dropped. This sometimes excludes legitimate plugin lists for niche tools where most plugins are individually small.
-- **README format dependence.** The parser handles markdown links (`[name](url)`) and HTML anchors (`<a href="url">name</a>`). Lists that link via images, plain text, raw URLs in tables, or unusual markup will yield few extracted repos.
-- **Badge detection is regex-based.** Image-based badge variants that diverge significantly from the standard `awesome.re/badge.svg` form may be missed, pushing an otherwise official-looking list into the non-canonical tier.
-- **Renamed/transferred repos.** GraphQL doesn't follow redirects, so the pipeline does a REST fallback to recover renamed repos. Repos that have been deleted or made private since the source list was last updated are silently dropped.
-- **Health score is a heuristic.** It combines stars, commit recency, license presence, PR activity, and a few other signals. A high score means "actively maintained, established project"; it is not an endorsement of code quality or security.
-- **Refresh cadence.** The site rebuilds once a week. Activity that happened mid-week (a star spike, a fresh release, a new awesome list) will not appear until the next Wednesday run.
-- **Built-in `GITHUB_TOKEN` quota.** CI runs use the workflow's auto-provided `GITHUB_TOKEN` (5000 REST requests/hour, 30 GraphQL requests/min). A full pipeline run usually fits, but very busy weeks may hit a transient rate limit and skip a few buckets - the next run picks them back up.
+- **GitHub Search 1000-result cap:** The Search API returns at most 1000 results per query, regardless of paging. The pipeline works around this with multiple star-range bucket queries (`50..200`, `200..350`, ..., `5000..50000`), but a list outside those buckets or whose star count straddles a boundary on a given day may be missed.
+- **Discovery is name-biased:** Non-canonical discovery requires either `awesome` in the repo name or membership in the `awesome-list`/`curated-list` topics. A high-quality curated list with neither will not be found.
+- **Star floor of 50:** Lists below 50 stars are filtered out of search results entirely.
+- **Category-level health filter (>= 50 avg):** A list whose linked repos average below 50 health is dropped. This sometimes excludes legitimate plugin lists for niche tools where most plugins are individually small.
+- **README format dependence:** The parser handles markdown links (`[name](url)`) and HTML anchors (`<a href="url">name</a>`). Lists that link via images, plain text, raw URLs in tables, or unusual markup will yield few extracted repos.
+- **Badge detection is regex-based:** Image-based badge variants that diverge significantly from the standard `awesome.re/badge.svg` form may be missed, pushing an otherwise official-looking list into the non-canonical tier.
+- **Renamed/transferred repos:** GraphQL doesn't follow redirects, so the pipeline does a REST fallback to recover renamed repos. Repos that have been deleted or made private since the source list was last updated are silently dropped.
+- **Health score is a heuristic:** It combines stars, commit recency, license presence, PR activity, and a few other signals. A high score means "actively maintained, established project"; it is not an endorsement of code quality or security.
+- **Refresh cadence:** The site rebuilds once a week. Activity that happened mid-week (a star spike, a fresh release, a new awesome list) will not appear until the next Wednesday run.
+- **Built-in `GITHUB_TOKEN` quota:** CI runs use the workflow's auto-provided `GITHUB_TOKEN` (5000 REST requests/hour, 30 GraphQL requests/min). A full pipeline run usually fits, but very busy weeks may hit a transient rate limit and skip a few buckets - the next run picks them back up.
 
 ## Architecture
 
