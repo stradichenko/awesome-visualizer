@@ -1,4 +1,4 @@
-# Awesome Visualizer -- Design System
+# Awesome Visualizer: Design System
 
 A CSS-only, zero-JS-dependency visual system for Awesome Visualizer.
 Dark-first, token-driven, responsive. No frameworks, no build step.
@@ -7,14 +7,14 @@ Dark-first, token-driven, responsive. No frameworks, no build step.
 
 ## Principles
 
-1. **Token-only** -- Every color, spacing, radius, shadow, and font value
+1. **Token-only:** Every color, spacing, radius, shadow, and font value
    comes from `--av-*` custom properties in `site/css/tokens.css`.
-2. **Dark-first** -- Default palette is dark. Future light theme overrides
+2. **Dark-first:** Default palette is dark. Future light theme overrides
    the same tokens on `:root`.
-3. **No frameworks** -- Pure CSS custom properties + vanilla CSS.
-4. **Relative units** -- `rem` for layout, `em` for component-local spacing.
+3. **No frameworks:** Pure CSS custom properties + vanilla CSS.
+4. **Relative units:** `rem` for layout, `em` for component-local spacing.
    Reserve `px` only for borders and sub-pixel corrections.
-5. **Accessible** -- Contrast >= 4.5:1 for text, >= 3:1 for interactive
+5. **Accessible:** Contrast >= 4.5:1 for text, >= 3:1 for interactive
    elements. Semantic HTML always.
 
 ---
@@ -26,7 +26,7 @@ Inspired by GitHub's dark mode and IDE aesthetics. The interface recedes --
 content and metrics are the focus, not chrome. Minimal ornamentation;
 clarity over personality.
 
-- **Density**: High -- compact cards, tight spacing, small base font (14px)
+- **Density**: High; compact cards, tight spacing, small base font (14px)
 - **Mood**: Calm, technical, precise
 - **Philosophy**: Every pixel earns its place through information
 
@@ -183,8 +183,8 @@ Each has a `-muted` variant at ~15% opacity for backgrounds.
 ### Health Bar (`.av-health`)
 
 Uses CSS custom properties for data-driven styling:
-- `--health-pct` -- width percentage
-- `--health-color` -- bar and score color
+- `--health-pct`: width percentage
+- `--health-color`: bar and score color
 
 Score thresholds:
 - 80-100: `var(--av-success)` (great)
@@ -230,13 +230,13 @@ Score thresholds:
 ### HTML IDs
 
 - **kebab-case** with feature prefix: `search-input`, `filter-category`
-- Minimize ID usage -- prefer `data-*` for JS hooks
+- Minimize ID usage; prefer `data-*` for JS hooks
 
 ### data-* Attributes
 
-- `data-ref="name"` -- DOM element references for JS
-- `data-action="verb"` -- Action buttons for delegated listeners
-- `data-page="n"` -- Pagination targets
+- `data-ref="name"`: DOM element references for JS
+- `data-action="verb"`: Action buttons for delegated listeners
+- `data-page="n"`: Pagination targets
 
 ---
 
@@ -250,7 +250,7 @@ Surfaces get lighter and shadows get stronger as elements rise.
 | 1 | `--av-surface-1` | none | Cards, navbar, controls bar |
 | 2 | `--av-surface-2` | `--av-shadow-sm` | Inputs, table headers, hover states |
 | 3 | `--av-surface-3` | `--av-shadow-md` | Autocomplete dropdown, popovers |
-| Overlay | -- | `--av-shadow-lg` | Modals, full-screen overlays |
+| Overlay | (none) | `--av-shadow-lg` | Modals, full-screen overlays |
 
 Rule: never skip levels. A popover (level 3) should not sit directly on the
 page background (level 0) without context.
@@ -261,7 +261,7 @@ page background (level 0) without context.
 
 | Name | Max-width | Key changes |
 |---------|-----------|----------------------------------------------|
-| Desktop | -- | 4-col stats, multi-col card grid, full navbar |
+| Desktop | (none) | 4-col stats, multi-col card grid, full navbar |
 | Tablet | 768px | 2-col stats, 1-col cards, stacked controls |
 | Compact | 480px | 1-col stats |
 
@@ -279,7 +279,7 @@ Design targets:
 **Do:**
 
 1. Reference `--av-*` tokens for every color, spacing, radius, and shadow
-2. Use semantic HTML -- `<article>`, `<section>`, `<nav>`, `<button>`
+2. Use semantic HTML: `<article>`, `<section>`, `<nav>`, `<button>`
 3. Use `data-ref` / `data-action` attributes for JS hooks
 4. Use CSS transitions (`--av-transition-fast`, `--av-transition-base`)
 5. Use inline SVG for all icons
@@ -289,18 +289,18 @@ Design targets:
 
 1. Hardcode hex colors, pixel sizes, or font stacks in component CSS
 2. Add external CDN links, icon fonts, or JS animation libraries
-3. Use `<div onclick>` -- always use `<button>` with `data-action`
+3. Use `<div onclick>`; always use `<button>` with `data-action`
 4. Write inline `style=""` (exception: CSS custom property injection)
-5. Assign IDs for styling -- use `av-`-prefixed classes
+5. Assign IDs for styling; use `av-`-prefixed classes
 6. Skip elevation levels (e.g., popover directly on page background)
 
 ---
 
 ## Rules for New Components
 
-1. Token-only -- no magic numbers
-2. No JS for visuals -- CSS transitions/keyframes only
-3. No CDN dependencies -- inline SVG for icons
-4. Responsive -- must not break below 768px
-5. Accessible -- semantic HTML, aria-* where needed, 4.5:1 contrast
-6. Dark-first -- reference tokens, never hardcode colors
+1. Token-only: no magic numbers
+2. No JS for visuals: CSS transitions and keyframes only
+3. No CDN dependencies: inline SVG for icons
+4. Responsive: must not break below 768px
+5. Accessible: semantic HTML, aria-* where needed, 4.5:1 contrast
+6. Dark-first: reference tokens, never hardcode colors
