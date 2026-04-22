@@ -35,7 +35,7 @@
 
 <h3 align="center">
 
-[Live site -> stradichenko.github.io/awesome-visualizer](https://stradichenko.github.io/awesome-visualizer/)
+[Site!](https://stradichenko.github.io/awesome-visualizer/)
 
 </h3>
 

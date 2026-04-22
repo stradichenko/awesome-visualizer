@@ -26,6 +26,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
       - name: Fetch repository data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

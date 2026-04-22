@@ -90,6 +90,7 @@ RESOURCE_DESC_RE = re.compile(r"^\s*[-*]\s+\[[^\]]+\]\([^)]+\)\s*[-:]?\s*(.*)")
 def save_checkpoint(stage, data):
     """Save intermediate progress so the script can resume after a crash."""
     payload = {"stage": stage, "data": data}
+    CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = str(CHECKPOINT_FILE) + ".tmp"
     with Path(tmp).open("w") as f:
         json.dump(payload, f, separators=(",", ":"))
