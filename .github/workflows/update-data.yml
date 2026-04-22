@@ -1,12 +1,21 @@
-name: Update Data
+name: Update Data and Deploy
 
 on:
+  # Weekly: Wednesdays at 02:00 UTC
   schedule:
-    - cron: '0 2 * * 1'
+    - cron: '0 2 * * 3'
+  # Manual trigger from the Actions tab
   workflow_dispatch:
 
+# Cancel an in-progress run if a new one is queued for the same ref
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: write   # commit refreshed site/data/ back to main
+  pages: write      # deploy to GitHub Pages
+  id-token: write   # OIDC token for the Pages deploy
 
 jobs:
   build:
@@ -41,4 +50,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/data/
-          git diff --cached --quiet || git commit -m "Update repos.json [skip ci]" && git push
+          git diff --cached --quiet || (git commit -m "Update repos.json [skip ci]" && git push)
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

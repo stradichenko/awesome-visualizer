@@ -9,7 +9,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Hosting](https://img.shields.io/badge/hosting-GitHub%20Pages-blue)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Data refresh](https://img.shields.io/badge/data%20refresh-weekly-brightgreen)
+![Data refresh](https://img.shields.io/badge/data%20refresh-weekly%20(Wed)-brightgreen)
 ![Built with Nix](https://img.shields.io/badge/built%20with-Nix-5277C3?logo=nixos&logoColor=white)
 
 </h3>
@@ -33,6 +33,12 @@
 
 </h4>
 
+<h3 align="center">
+
+[Live site -> stradichenko.github.io/awesome-visualizer](https://stradichenko.github.io/awesome-visualizer/)
+
+</h3>
+
 A data-driven explorer for the [sindresorhus/awesome](https://github.com/sindresorhus/awesome) ecosystem. Browse, search, filter, and compare awesome list repositories with rich metrics -- stars, forks, commit activity, health scores -- all on a fast static site hosted on GitHub Pages.
 
 ## Features
@@ -42,24 +48,53 @@ A data-driven explorer for the [sindresorhus/awesome](https://github.com/sindres
 - Filter by category, language, and health score
 - Sort by stars, health, recent activity, commits, or name
 - Health score (0-100) combining stars, commit freshness, activity, and community signals
-- Daily data refresh via GitHub Actions
+- Weekly data refresh via GitHub Actions (Wednesdays, 02:00 UTC)
 - Dark-first design, fully responsive, no external dependencies
 
-## Tier System
+## How categories are built
 
-The site organizes repositories into three tiers based on how they were discovered:
+A **category** in the site is one curated awesome list. Every category page shows the repos that list recommends, grouped under the same subcategory headings the original README uses.
 
-### Official
+### Discovery
 
-Repositories curated in lists that appear directly on [sindresorhus/awesome](https://github.com/sindresorhus/awesome) - the canonical master list. Each sub-list must carry the [![Awesome](https://awesome.re/badge.svg)](https://awesome.re) badge, which signals it has been manually reviewed and accepted into the official ecosystem. The pipeline crawls these lists recursively up to depth 3, following any nested awesome lists it finds.
+A list becomes a category if it makes it through three stages:
 
-### Unofficial
+1. **Discovery** - the list is found either by recursively crawling [sindresorhus/awesome](https://github.com/sindresorhus/awesome) (depth 3) or by querying GitHub Search for repos matching `awesome in:name`, the `awesome-list` topic, or the `curated-list` topic.
+2. **Validation** - the list's README is fetched and inspected. To pass, it must contain at least 10 GitHub repository links and at least 2 section headings (`##` to `####`). Lists carrying the [![Awesome](https://awesome.re/badge.svg)](https://awesome.re) badge are routed to the official or unofficial tier; lists without the badge but with link-density indicators of a curated resource list are routed to non-canonical.
+3. **Quality filter** - the linked repos are fetched in batches and a category-level health score is computed (mean health of every repo the list references, including ones already in our DB). Categories with average health below 50 are dropped. This keeps spam, abandoned plugin dumps, and starter-template lists out.
 
-Repositories from lists that carry the awesome.re badge but are **not** linked from the official sindresorhus/awesome index. They are discovered via GitHub Search. These lists follow the same curation conventions as official ones (badge, organized headings, substantial link count) but exist outside the curated hierarchy -- community-maintained lists that haven't been submitted or accepted upstream.
+### Tiers
 
-### Non-canonical
+Each surviving list is placed into one of three tiers, which control how the site labels and groups it.
 
-Repositories from lists that look like curated resource lists (10+ links, 2+ section headings, good link density) but **do not** carry the awesome.re badge. Discovered via GitHub Search. These are often high-quality topic lists that predate or simply don't follow the awesome format. Only lists whose linked repos have an average health score above 50 are included, to filter out low-quality results.
+| Tier | Source | Has awesome.re badge | Discovery method |
+| ---- | ------ | -------------------- | ---------------- |
+| Official | sindresorhus/awesome subtree | yes | recursive crawl |
+| Unofficial | community awesome list | yes | GitHub Search |
+| Non-canonical | curated topic list | no | GitHub Search |
+
+- **Official** - lists reachable from the canonical [sindresorhus/awesome](https://github.com/sindresorhus/awesome) index, recursively up to depth 3. These follow the official curation conventions and have been manually accepted upstream.
+- **Unofficial** - lists carrying the awesome.re badge but not linked from the official index. They follow the same conventions; they just haven't been submitted or accepted into the master list.
+- **Non-canonical** - lists that look like curated resource collections (10+ links, multiple section headings, good link density) but do not carry the awesome.re badge. Often topic lists that predate or simply don't follow the awesome format.
+
+### Subcategories
+
+Within each category, repos are grouped by the section heading (`##`/`###`/`####`) they appeared under in the source README. Generic sections (`Contents`, `License`, `Contributing`, `Footnotes`) are stripped. Repos that appear before any heading land in `General`.
+
+## Limitations
+
+A few things worth knowing about the data:
+
+- **GitHub Search 1000-result cap.** The Search API returns at most 1000 results per query, regardless of paging. The pipeline works around this with multiple star-range bucket queries (`50..200`, `200..350`, ..., `5000..50000`), but a list outside those buckets or whose star count straddles a boundary on a given day may be missed.
+- **Discovery is name-biased.** Non-canonical discovery requires either `awesome` in the repo name or membership in the `awesome-list`/`curated-list` topics. A high-quality curated list with neither will not be found.
+- **Star floor of 50.** Lists below 50 stars are filtered out of search results entirely.
+- **Category-level health filter (>= 50 avg).** A list whose linked repos average below 50 health is dropped. This sometimes excludes legitimate plugin lists for niche tools where most plugins are individually small.
+- **README format dependence.** The parser handles markdown links (`[name](url)`) and HTML anchors (`<a href="url">name</a>`). Lists that link via images, plain text, raw URLs in tables, or unusual markup will yield few extracted repos.
+- **Badge detection is regex-based.** Image-based badge variants that diverge significantly from the standard `awesome.re/badge.svg` form may be missed, pushing an otherwise official-looking list into the non-canonical tier.
+- **Renamed/transferred repos.** GraphQL doesn't follow redirects, so the pipeline does a REST fallback to recover renamed repos. Repos that have been deleted or made private since the source list was last updated are silently dropped.
+- **Health score is a heuristic.** It combines stars, commit recency, license presence, PR activity, and a few other signals. A high score means "actively maintained, established project" - it is not an endorsement of code quality or security.
+- **Refresh cadence.** The site rebuilds once a week. Activity that happened mid-week (a star spike, a fresh release, a new awesome list) will not appear until the next Wednesday run.
+- **Built-in `GITHUB_TOKEN` quota.** CI runs use the workflow's auto-provided `GITHUB_TOKEN` (5000 REST requests/hour, 30 GraphQL requests/min). A full pipeline run usually fits, but very busy weeks may hit a transient rate limit and skip a few buckets - the next run picks them back up.
 
 ---
 
@@ -205,13 +240,21 @@ Each repo gets a 0-100 health score based on 8 weighted factors:
 
 ## CI/CD
 
-The GitHub Actions workflow (`.github/workflows/update-data.yml`) runs:
+The GitHub Actions workflow ([.github/workflows/update-data.yml](.github/workflows/update-data.yml)) runs:
 
-- **Daily** at 02:00 UTC via cron
-- **On push** to `main`
-- **Manually** via workflow_dispatch
+- **Weekly** at 02:00 UTC on Wednesdays via cron
+- **Manually** via `workflow_dispatch` from the Actions tab
 
-It uses the Nix environment to run the data pipeline, then deploys `site/` to GitHub Pages.
+It runs the full data pipeline inside the Nix dev shell, commits any changes under `site/data/` back to `main`, then deploys `site/` to GitHub Pages using `actions/deploy-pages`.
+
+### One-time GitHub Pages setup
+
+After making the repo public, enable Pages with the Actions source:
+
+1. Repo **Settings** -> **Pages**
+2. Under **Build and deployment** -> **Source**, choose **GitHub Actions**
+
+The first scheduled run (or a manual `workflow_dispatch`) will populate the deployment.
 
 ## Design System
 
@@ -224,4 +267,4 @@ See [docs/design-system.md](docs/design-system.md) for the full specification. K
 
 ## License
 
-MIT
+[MIT](LICENSE)

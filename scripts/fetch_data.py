@@ -110,11 +110,15 @@ def clear_checkpoint():
 
 
 def get_token():
-    """Read GITHUB_TOKEN from environment."""
+    """Read GITHUB_TOKEN from environment, falling back to `gh auth token`."""
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
-        print("Error: GITHUB_TOKEN environment variable is not set.", file=sys.stderr)
-        print("Set it with: export GITHUB_TOKEN=ghp_...", file=sys.stderr)
+        import subprocess
+        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+        token = result.stdout.strip()
+    if not token:
+        print("Error: GITHUB_TOKEN is not set and `gh auth token` returned nothing.", file=sys.stderr)
+        print("Run `gh auth login` or set GITHUB_TOKEN.", file=sys.stderr)
         sys.exit(1)
     return token
 
@@ -369,12 +373,42 @@ def parse_master_readme(readme_text):
     return unique[:MAX_SUBLISTS]
 
 
+_HTML_ANCHOR_RE = re.compile(
+    r'<a\s[^>]*href="https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/[^"]*)?)">([^<]*)',
+    re.IGNORECASE,
+)
+
+
 def parse_sublist_readme(readme_text, category_name, category_id, source_repo):
-    """Extract individual project repos from a sub-list's README with subcategory headings."""
+    """Extract individual project repos from a sub-list's README with subcategory headings.
+
+    Handles both standard markdown links ([name](url)) and HTML anchor tags
+    (<a href="url">name</a>) since some lists use HTML tables or mixed markup.
+    """
     repos = []
+    seen = set()
     current_sub = "General"
     skip_sections = {"contents", "license", "contributing", "footnotes", "related", "about", "meta"}
     source_lower = source_repo.lower()
+
+    def _add(repo_path, name):
+        clean = repo_path.strip("/").split("?")[0].split("#")[0]
+        parts = clean.split("/")
+        if len(parts) < 2:
+            return
+        clean = f"{parts[0]}/{parts[1]}"
+        key = clean.lower()
+        if key == source_lower or key in seen:
+            return
+        seen.add(key)
+        repos.append({
+            "full_name": clean,
+            "link_name": name.strip() or clean.split("/")[1],
+            "category": category_id,
+            "category_name": category_name,
+            "subcategory": current_sub,
+            "subcategory_id": slugify(current_sub),
+        })
 
     for line in readme_text.split("\n"):
         # Detect ##, ###, or #### section headings as subcategories
@@ -393,16 +427,10 @@ def parse_sublist_readme(readme_text, category_name, category_id, source_repo):
             r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
             line,
         ):
-            clean = repo_path.strip("/")
-            if clean.count("/") == 1 and clean.lower() != source_lower:
-                repos.append({
-                    "full_name": clean,
-                    "link_name": name,
-                    "category": category_id,
-                    "category_name": category_name,
-                    "subcategory": current_sub,
-                    "subcategory_id": slugify(current_sub),
-                })
+            _add(repo_path, name)
+
+        for repo_path, name in _HTML_ANCHOR_RE.findall(line):
+            _add(repo_path, name)
 
     return repos
 

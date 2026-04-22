@@ -48,6 +48,7 @@ STEPS = [
         "script": "scripts/fetch_noncanonical.py",
         "needs_token": True,
         "outputs": ["repos.json"],
+        "extra_args": [],
     },
     {
         "num": 3,
@@ -172,7 +173,7 @@ def run_step(step, state):
     print(f"  Step {num}/{len(STEPS)}: {step['label']}")
     print(f"{'=' * 60}\n")
 
-    cmd = [sys.executable, str(ROOT / step["script"])]
+    cmd = [sys.executable, str(ROOT / step["script"])] + step.get("extra_args", [])
     t0 = time.monotonic()
 
     try:
@@ -210,7 +211,14 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show current pipeline state")
     parser.add_argument("--from", type=int, dest="from_step", metavar="N", help="Force start from step N (1-5)")
     parser.add_argument("--dry-run", action="store_true", help="Show what would run without executing")
+    parser.add_argument("--force-search", action="store_true", help="Pass --force-search to fetch_noncanonical (ignore its internal checkpoint)")
     args = parser.parse_args()
+
+    if args.force_search:
+        for step in STEPS:
+            if step["name"] == "fetch_noncanonical":
+                step["extra_args"] = ["--force-search"]
+                break
 
     if args.reset:
         clear_state()

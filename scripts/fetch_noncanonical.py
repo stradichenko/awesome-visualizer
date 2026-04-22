@@ -114,7 +114,12 @@ def clear_checkpoint():
 def get_token():
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
-        print("Error: GITHUB_TOKEN environment variable is not set.", file=sys.stderr)
+        import subprocess
+        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+        token = result.stdout.strip()
+    if not token:
+        print("Error: GITHUB_TOKEN is not set and `gh auth token` returned nothing.", file=sys.stderr)
+        print("Run `gh auth login` or set GITHUB_TOKEN.", file=sys.stderr)
         sys.exit(1)
     return token
 
@@ -258,12 +263,45 @@ def looks_like_curated_list(readme_text):
     return True, link_count
 
 
+_HTML_ANCHOR_RE = re.compile(
+    r'<a\s[^>]*href="https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+(?:/[^"]*)?)">([^<]*)',
+    re.IGNORECASE,
+)
+
+
 def parse_list_readme(readme_text, category_name, category_id, source_repo):
-    """Extract repos from a list README with subcategory headings."""
+    """Extract repos from a list README with subcategory headings.
+
+    Handles both standard markdown links ([name](url)) and HTML anchor tags
+    (<a href="url">name</a>) since some lists use HTML tables or mixed markup.
+    """
     repos = []
+    seen = set()
     current_sub = "General"
     skip_sections = {"contents", "license", "contributing", "footnotes", "related", "about", "meta"}
     source_lower = source_repo.lower()
+
+    def _add(repo_path, name):
+        clean = repo_path.strip("/").split("?")[0].split("#")[0]
+        parts = clean.split("/")
+        if len(parts) < 2:
+            return
+        clean = f"{parts[0]}/{parts[1]}"
+        key = clean.lower()
+        if key == source_lower or key in seen:
+            return
+        owner = parts[0].lower()
+        if owner in NOT_REPO_PREFIXES:
+            return
+        seen.add(key)
+        repos.append({
+            "full_name": clean,
+            "link_name": name.strip() or clean.split("/")[1],
+            "category": category_id,
+            "category_name": category_name,
+            "subcategory": current_sub,
+            "subcategory_id": slugify(current_sub),
+        })
 
     for line in readme_text.split("\n"):
         heading = re.match(r"^#{2,4}\s+(.+)", line)
@@ -280,19 +318,10 @@ def parse_list_readme(readme_text, category_name, category_id, source_repo):
             r"\[([^\]]+)\]\(https://github\.com/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)",
             line,
         ):
-            clean = repo_path.strip("/")
-            if clean.count("/") == 1 and clean.lower() != source_lower:
-                owner = clean.split("/")[0].lower()
-                if owner in NOT_REPO_PREFIXES:
-                    continue
-                repos.append({
-                    "full_name": clean,
-                    "link_name": name,
-                    "category": category_id,
-                    "category_name": category_name,
-                    "subcategory": current_sub,
-                    "subcategory_id": slugify(current_sub),
-                })
+            _add(repo_path, name)
+
+        for repo_path, name in _HTML_ANCHOR_RE.findall(line):
+            _add(repo_path, name)
 
     return repos
 
@@ -532,7 +561,10 @@ def search_awesome_repos(token, exclude_set):
             print(f"    Page {page}/{SEARCH_PAGES}...", end="", flush=True)
 
             data = github_rest(url, token)
-            if not data or "items" not in data:
+            if data is None:
+                print(" FAILED (rate limit or network error - results may be incomplete)", file=sys.stderr)
+                break
+            if "items" not in data:
                 print(" no results")
                 break
 
@@ -577,6 +609,15 @@ def search_awesome_repos(token, exclude_set):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch non-canonical awesome lists")
+    parser.add_argument(
+        "--force-search",
+        action="store_true",
+        help="Ignore any saved checkpoint and run the full search from scratch",
+    )
+    args = parser.parse_args()
+
     token = get_token()
 
     # Load existing canonical data
@@ -600,7 +641,11 @@ def main():
 
     # Check for checkpoint from a previous interrupted run
     cp_stage, cp_data = load_checkpoint()
-    resume = cp_stage == "unofficial_done" and cp_data
+    resume = not args.force_search and cp_stage == "unofficial_done" and cp_data
+
+    if args.force_search and cp_stage:
+        print("  [checkpoint] --force-search: ignoring checkpoint, running full search")
+        clear_checkpoint()
 
     if resume:
         print(f"\n  [checkpoint] Found checkpoint at '{cp_stage}' - skipping search and validation")
@@ -710,14 +755,25 @@ def main():
 
     # Helper to batch-fetch via GraphQL and build category summaries
     def fetch_and_summarize(all_links, cat_meta, tier_label, dedup_seed, resolve_redirects=True):
+        # Build existing-repo health lookup so deduped entries can still
+        # contribute to the category health filter.
+        existing_health = {r["full_name"].lower(): r.get("health", 0) for r in existing.get("repos", [])}
+
         seen = set(dedup_seed)
         unique = []
+        # Track per-category supplemental health for repos already in DB
+        cat_known_health = {}  # cid -> [health, ...]
         for link in all_links:
             key = link["full_name"].lower()
             if key not in seen:
                 seen.add(key)
                 link["tier"] = tier_label
                 unique.append(link)
+            else:
+                # Repo already in DB - note its health for the category filter
+                cid = link["category"]
+                h = existing_health.get(key, 0)
+                cat_known_health.setdefault(cid, []).append(h)
         print(f"\n  {len(unique)} unique {tier_label} project repos")
 
         if not unique:
@@ -822,26 +878,37 @@ def main():
             print(f"  Skipping redirect resolution for {len(all_missed)} missed project repos")
 
         # Compute category stats and filter by health
+        # Health is computed over ALL repos a list references (unique + already-known)
+        # so that deduplication against the official DB doesn't penalise quality lists.
         print(f"\nComputing {tier_label} category statistics...")
         cd_map = {}
         for r in fetched:
             c = r["category"]
             if c not in cd_map:
-                cd_map[c] = {"repos": [], "health_sum": 0, "langs": {}}
+                cd_map[c] = {"repos": [], "health_sum": 0, "health_count": 0, "langs": {}}
             cd_map[c]["repos"].append(r)
             cd_map[c]["health_sum"] += r.get("health", 0)
+            cd_map[c]["health_count"] += 1
             lang = r.get("language", "")
             if lang:
                 cd_map[c]["langs"][lang] = cd_map[c]["langs"].get(lang, 0) + 1
+
+        # Supplement health counts with already-known repos from the DB
+        for cid, known_scores in cat_known_health.items():
+            if cid not in cd_map:
+                continue
+            cd_map[cid]["health_sum"] += sum(known_scores)
+            cd_map[cid]["health_count"] += len(known_scores)
 
         categories = []
         kept = []
         dropped = 0
         for cid, cd in cd_map.items():
-            count = len(cd["repos"])
-            if count == 0:
+            count = len(cd["repos"])  # stored repos (unique only)
+            health_count = cd["health_count"]  # includes already-known repos
+            if health_count == 0:
                 continue
-            avg_health = round(cd["health_sum"] / count)
+            avg_health = round(cd["health_sum"] / health_count)
             if avg_health < MIN_HEALTH:
                 dropped += 1
                 continue
