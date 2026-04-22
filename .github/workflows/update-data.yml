@@ -27,15 +27,46 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
+      - name: Restore pipeline checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}
+          restore-keys: |
+            pipeline-checkpoints-
+
       - name: Fetch repository data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py
 
+      - name: Save fetch_data checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}-step1
+
       - name: Fetch non-canonical awesome lists
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py
+
+      - name: Save fetch_noncanonical checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}-step2
 
       - name: Enrich search data
         run: nix develop --command python scripts/enrich_data.py
