@@ -1,0 +1,22 @@
+name: Retry Pipeline on Timeout
+
+on:
+  workflow_run:
+    workflows: ["Update Data"]
+    types: [completed]
+
+permissions:
+  actions: write  # needed to dispatch a new workflow run
+
+jobs:
+  retry:
+    # Only re-trigger if the run was cancelled (i.e. hit the 6h job ceiling).
+    # A real failure (non-zero exit) is left alone so it doesn't loop forever.
+    if: github.event.workflow_run.conclusion == 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-trigger Update Data
+        run: gh workflow run update-data.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
