@@ -55,7 +55,7 @@ README_WORKERS = 15
 GQL_WORKERS = 2
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
 MAX_CRAWL_DEPTH = 3
-RUNTIME_BUFFER = 300  # Exit this many seconds before max-runtime
+RUNTIME_BUFFER = 900  # Exit this many seconds before max-runtime (15 min buffer for post-steps)
 
 # Noise filters for resource link extraction
 NOISE_DOMAINS_RE = re.compile(
@@ -754,6 +754,7 @@ def main():
                     sys.exit(0)
 
         # Retry failed batches sequentially with escalating cooldown
+        _runtime_broke = False
         for attempt in range(1, BATCH_RETRIES + 1):
             failed_indices = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0]
             retry_batches = [(i, batches[i][1]) for i in failed_indices if len(batches[i][1]) > 0]
@@ -763,6 +764,10 @@ def main():
             print(f"  Retrying {len(retry_batches)} failed batches (round {attempt}/{BATCH_RETRIES}, {cooldown:.0f}s cooldown)...", flush=True)
             time.sleep(cooldown)
             for idx, batch in retry_batches:
+                if runtime_exceeded(start_time, max_runtime):
+                    print("\n[max-runtime] Approaching limit during batch retry. Saving checkpoint and exiting.")
+                    _runtime_broke = True
+                    break
                 time.sleep(GQL_DELAY)
                 query = build_graphql_query(batch)
                 data, _errors = github_graphql(query, token)
@@ -770,6 +775,8 @@ def main():
                 if repos:
                     gql_results[idx] = repos
                     print(f"    Batch {idx + 1} recovered ({len(repos)} repos)", flush=True)
+            if _runtime_broke:
+                break
 
         still_failed = [i for i, r in enumerate(gql_results) if r is not None and len(r) == 0 and len(batches[i][1]) > 0]
         if still_failed:
@@ -780,6 +787,18 @@ def main():
             if repos:
                 all_repos.extend(repos)
 
+        if _runtime_broke:
+            print("\n[max-runtime] Batch retry interrupted by runtime limit. Saving checkpoint and exiting.")
+            save_checkpoint("gql_done", {
+                "unique": unique,
+                "all_repos": all_repos,
+                "all_resources": all_resources,
+                "cat_meta": cat_meta,
+                "crawled_as_list": sorted(crawled_as_list),
+            })
+            mark_incomplete()
+            sys.exit(0)
+
         # Recover renamed/transferred repos via REST API redirect
         if all_missed:
             resolved_already = {r["full_name"].lower() for r in all_repos}
@@ -788,6 +807,17 @@ def main():
                 print(f"\nResolving {len(to_resolve)} unresolved repos via REST API...")
                 redirected = []
                 for info in to_resolve:
+                    if runtime_exceeded(start_time, max_runtime):
+                        print("\n[max-runtime] Approaching limit during redirect resolution. Saving checkpoint and exiting.")
+                        save_checkpoint("gql_done", {
+                            "unique": unique,
+                            "all_repos": all_repos,
+                            "all_resources": all_resources,
+                            "cat_meta": cat_meta,
+                            "crawled_as_list": sorted(crawled_as_list),
+                        })
+                        mark_incomplete()
+                        sys.exit(0)
                     time.sleep(REST_DELAY)
                     rest = github_rest(f"repos/{info['full_name']}", token)
                     if rest and rest.get("full_name"):
@@ -801,6 +831,17 @@ def main():
                     print(f"  Re-querying {len(redirected)} redirected repos...")
                     redir_batches = [redirected[i:i + BATCH_SIZE] for i in range(0, len(redirected), BATCH_SIZE)]
                     for rb in redir_batches:
+                        if runtime_exceeded(start_time, max_runtime):
+                            print("\n[max-runtime] Approaching limit during redirect re-query. Saving checkpoint and exiting.")
+                            save_checkpoint("gql_done", {
+                                "unique": unique,
+                                "all_repos": all_repos,
+                                "all_resources": all_resources,
+                                "cat_meta": cat_meta,
+                                "crawled_as_list": sorted(crawled_as_list),
+                            })
+                            mark_incomplete()
+                            sys.exit(0)
                         time.sleep(GQL_DELAY)
                         query = build_graphql_query(rb)
                         data, _errors = github_graphql(query, token)
@@ -944,6 +985,20 @@ def main():
                     break
                 print(f"    Retrying {len(retry_batches)} failed batches (attempt {attempt}/{BATCH_RETRIES})...", flush=True)
                 for idx, batch in retry_batches:
+                    if runtime_exceeded(start_time, max_runtime):
+                        print("\n[max-runtime] Approaching limit during discovery batch retry. Saving checkpoint and exiting.")
+                        partial_repos = []
+                        for r in new_gql_results:
+                            if r:
+                                partial_repos.extend(r)
+                        all_repos.extend(partial_repos)
+                        save_checkpoint("discovery_done", {
+                            "all_repos": all_repos,
+                            "all_resources": all_resources,
+                            "cat_meta": cat_meta,
+                        })
+                        mark_incomplete()
+                        sys.exit(0)
                     time.sleep(GQL_DELAY)
                     query = build_graphql_query(batch)
                     data, _errors = github_graphql(query, token)
