@@ -36,3 +36,6 @@ site/data/viz-data.json
 site/data/index.json
 site/data/repos-*.json
 site/data/resources-*.json
+
+# Claude Code
+CLAUDE.md

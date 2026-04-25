@@ -17,6 +17,7 @@ Usage:
 Requires GITHUB_TOKEN environment variable.
 """
 
+import argparse
 import base64
 import json
 import os
@@ -46,6 +47,7 @@ GITHUB_API = "https://api.github.com"
 MASTER_LIST = "sindresorhus/awesome"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
 CHECKPOINT_FILE = Path(__file__).resolve().parent.parent / "site" / "data" / ".fetch_checkpoint.json"
+INCOMPLETE_MARKER = Path(__file__).resolve().parent.parent / "site" / "data" / ".incomplete_fetch"
 NINETY_DAYS_AGO = (datetime.now(UTC) - timedelta(days=90)).isoformat()
 MAX_SUBLISTS = 800
 REST_DELAY = 0.3
@@ -53,6 +55,7 @@ README_WORKERS = 15
 GQL_WORKERS = 2
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
 MAX_CRAWL_DEPTH = 3
+RUNTIME_BUFFER = 300  # Exit this many seconds before max-runtime
 
 # Noise filters for resource link extraction
 NOISE_DOMAINS_RE = re.compile(
@@ -108,6 +111,24 @@ def load_checkpoint():
 def clear_checkpoint():
     if CHECKPOINT_FILE.exists():
         CHECKPOINT_FILE.unlink()
+
+
+def mark_incomplete():
+    """Write a marker file so CI knows this run did not finish."""
+    INCOMPLETE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    INCOMPLETE_MARKER.write_text("1")
+
+
+def clear_incomplete():
+    if INCOMPLETE_MARKER.exists():
+        INCOMPLETE_MARKER.unlink()
+
+
+def runtime_exceeded(start_time, max_runtime, buffer=RUNTIME_BUFFER):
+    """Return True if we are within `buffer` seconds of max_runtime."""
+    if not max_runtime:
+        return False
+    return time.monotonic() - start_time > (max_runtime - buffer)
 
 
 def get_token():
@@ -547,7 +568,21 @@ def process_batch_result(data, batch_info):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Fetch repository data")
+    parser.add_argument(
+        "--max-runtime",
+        type=int,
+        default=None,
+        help="Maximum runtime in seconds. Saves checkpoint and exits gracefully before limit.",
+    )
+    args = parser.parse_args()
+
     token = get_token()
+    start_time = time.monotonic()
+    max_runtime = args.max_runtime
+
+    # Clear stale markers from previous runs
+    clear_incomplete()
 
     # ---- Check for checkpoint from a previous interrupted run ----
     cp_stage, cp_data = load_checkpoint()
@@ -662,6 +697,12 @@ def main():
             "crawled_as_list": sorted(crawled_as_list),
         })
 
+    # Early-exit guard before expensive GraphQL phase
+    if not cp_stage and runtime_exceeded(start_time, max_runtime):
+        print("\n[max-runtime] Approaching limit after crawl. Saving checkpoint and exiting.")
+        mark_incomplete()
+        sys.exit(0)
+
     # Helper used by both step 5 and step 5b
     def _fetch_gql_batch(batch_num_info):
         bn, batch = batch_num_info
@@ -696,6 +737,21 @@ def main():
                 all_missed.extend(missed)
                 label = "FAILED" if failed else f"{len(repos)} repos"
                 print(f"  Batch {bn + 1}/{total_batches} done ({label})", flush=True)
+                if runtime_exceeded(start_time, max_runtime):
+                    partial_repos = []
+                    for r in gql_results:
+                        if r:
+                            partial_repos.extend(r)
+                    print(f"\n[max-runtime] Approaching limit after batch {bn + 1}. Saving partial checkpoint.")
+                    save_checkpoint("gql_done", {
+                        "unique": unique,
+                        "all_repos": partial_repos,
+                        "all_resources": all_resources,
+                        "cat_meta": cat_meta,
+                        "crawled_as_list": sorted(crawled_as_list),
+                    })
+                    mark_incomplete()
+                    sys.exit(0)
 
         # Retry failed batches sequentially with escalating cooldown
         for attempt in range(1, BATCH_RETRIES + 1):
@@ -765,6 +821,12 @@ def main():
             "crawled_as_list": sorted(crawled_as_list),
         })
 
+    # Early-exit guard before discovery phase
+    if cp_stage not in ("discovery_done",) and runtime_exceeded(start_time, max_runtime):
+        print("\n[max-runtime] Approaching limit before discovery. Saving checkpoint and exiting.")
+        mark_incomplete()
+        sys.exit(0)
+
     # ---- Step 5b: Recursive awesome list discovery ----
     if cp_stage in ("gql_done",):
         all_missed = []  # Not carried across checkpoints; only used within a run
@@ -774,6 +836,16 @@ def main():
         print("\nDiscovering nested awesome lists...")
         depth = 2
         while depth <= MAX_CRAWL_DEPTH:
+            if runtime_exceeded(start_time, max_runtime):
+                print(f"\n[max-runtime] Approaching limit at depth {depth}. Saving checkpoint and exiting.")
+                save_checkpoint("discovery_done", {
+                    "all_repos": all_repos,
+                    "all_resources": all_resources,
+                    "cat_meta": cat_meta,
+                })
+                mark_incomplete()
+                sys.exit(0)
+
             potential = []
             for r in all_repos:
                 fn_lower = r["full_name"].lower()
@@ -850,6 +922,20 @@ def main():
                     all_missed.extend(missed)
                     label = "FAILED" if failed else f"{len(repos)} repos"
                     print(f"    Batch {bn + 1}/{total_new} done ({label})", flush=True)
+                    if runtime_exceeded(start_time, max_runtime):
+                        partial_repos = []
+                        for r in new_gql_results:
+                            if r:
+                                partial_repos.extend(r)
+                        all_repos.extend(partial_repos)
+                        print(f"\n[max-runtime] Approaching limit during discovery batch {bn + 1}. Saving checkpoint.")
+                        save_checkpoint("discovery_done", {
+                            "all_repos": all_repos,
+                            "all_resources": all_resources,
+                            "cat_meta": cat_meta,
+                        })
+                        mark_incomplete()
+                        sys.exit(0)
 
             for attempt in range(1, BATCH_RETRIES + 1):
                 failed_indices = [i for i, r in enumerate(new_gql_results) if r is not None and len(r) == 0]
@@ -880,6 +966,17 @@ def main():
             "all_resources": all_resources,
             "cat_meta": cat_meta,
         })
+
+    # Final runtime guard before the output phase
+    if runtime_exceeded(start_time, max_runtime):
+        print("\n[max-runtime] Approaching limit before output build. Saving checkpoint and exiting.")
+        save_checkpoint("discovery_done", {
+            "all_repos": all_repos,
+            "all_resources": all_resources,
+            "cat_meta": cat_meta,
+        })
+        mark_incomplete()
+        sys.exit(0)
 
     # ---- Step 6: Build output ----
     seen_urls = set()
@@ -1001,6 +1098,7 @@ def main():
 
     # Clean up checkpoint after successful completion
     clear_checkpoint()
+    clear_incomplete()
 
 
 if __name__ == "__main__":

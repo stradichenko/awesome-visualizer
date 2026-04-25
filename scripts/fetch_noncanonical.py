@@ -17,6 +17,7 @@ Usage:
 Requires GITHUB_TOKEN environment variable.
 """
 
+import argparse
 import base64
 import json
 import os
@@ -46,6 +47,8 @@ GITHUB_API = "https://api.github.com"
 GITHUB_GRAPHQL = "https://api.github.com/graphql"
 REPO_DATA = Path(__file__).resolve().parent.parent / "site" / "data" / "repos.json"
 CHECKPOINT_FILE = Path(__file__).resolve().parent.parent / "site" / "data" / ".nc_checkpoint.json"
+INCOMPLETE_MARKER = Path(__file__).resolve().parent.parent / "site" / "data" / ".incomplete_nc"
+RUNTIME_BUFFER = 300
 NINETY_DAYS_AGO = (datetime.now(UTC) - timedelta(days=90)).isoformat()
 SEARCH_DELAY = 2.5  # GitHub Search API: 30 req/min
 REST_DELAY = 0.5   # Core API: 5000 req/hr
@@ -110,6 +113,24 @@ def load_checkpoint():
 def clear_checkpoint():
     if CHECKPOINT_FILE.exists():
         CHECKPOINT_FILE.unlink()
+
+
+def mark_incomplete():
+    """Write a marker file so CI knows this run did not finish."""
+    INCOMPLETE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    INCOMPLETE_MARKER.write_text("1")
+
+
+def clear_incomplete():
+    if INCOMPLETE_MARKER.exists():
+        INCOMPLETE_MARKER.unlink()
+
+
+def runtime_exceeded(start_time, max_runtime, buffer=RUNTIME_BUFFER):
+    """Return True if we are within `buffer` seconds of max_runtime."""
+    if not max_runtime:
+        return False
+    return time.monotonic() - start_time > (max_runtime - buffer)
 
 
 def get_token():
@@ -610,16 +631,26 @@ def search_awesome_repos(token, exclude_set):
 
 
 def main():
-    import argparse
     parser = argparse.ArgumentParser(description="Fetch non-canonical awesome lists")
     parser.add_argument(
         "--force-search",
         action="store_true",
         help="Ignore any saved checkpoint and run the full search from scratch",
     )
+    parser.add_argument(
+        "--max-runtime",
+        type=int,
+        default=None,
+        help="Maximum runtime in seconds. Saves checkpoint and exits gracefully before limit.",
+    )
     args = parser.parse_args()
 
     token = get_token()
+    start_time = time.monotonic()
+    max_runtime = args.max_runtime
+
+    # Clear stale markers from previous runs
+    clear_incomplete()
 
     # Load existing canonical data
     if not REPO_DATA.exists():
@@ -729,6 +760,12 @@ def main():
             with REPO_DATA.open("w") as f:
                 json.dump(existing, f, separators=(",", ":"))
             return
+
+        # Runtime guard before crawling unofficial lists
+        if runtime_exceeded(start_time, max_runtime):
+            print("\n[max-runtime] Approaching limit after validation. Saving checkpoint and exiting.")
+            mark_incomplete()
+            sys.exit(0)
 
     # Helper to crawl a list of validated entries and produce repos + resources
     def crawl_lists(validated, tier_label):
@@ -960,6 +997,12 @@ def main():
             "uo_seen": list(uo_seen),
         })
 
+    # Runtime guard before non-canonical crawling
+    if runtime_exceeded(start_time, max_runtime):
+        print("\n[max-runtime] Approaching limit after unofficial lists. Saving checkpoint and exiting.")
+        mark_incomplete()
+        sys.exit(0)
+
     # Step 4: Crawl non-canonical lists
     if noncanonical:
         print("\nCrawling non-canonical lists for repos...")
@@ -968,6 +1011,12 @@ def main():
         nc_links, nc_resources, nc_meta = [], [], {}
 
     nc_cats, nc_repos, _ = fetch_and_summarize(nc_links, nc_meta, "non-canonical", uo_seen, resolve_redirects=False)
+
+    # Runtime guard before writing output
+    if runtime_exceeded(start_time, max_runtime):
+        print("\n[max-runtime] Approaching limit after non-canonical lists. Saving checkpoint and exiting.")
+        mark_incomplete()
+        sys.exit(0)
 
     # Step 5: Write back to repos.json
     existing["unofficial_categories"] = uo_cats
@@ -1006,6 +1055,7 @@ def main():
         json.dump(existing, f, separators=(",", ":"))
 
     clear_checkpoint()
+    clear_incomplete()
     size_mb = REPO_DATA.stat().st_size / 1024 / 1024
     print("\nDone.")
     print(f"  Unofficial: {len(uo_cats)} lists, {len(uo_repos)} repos")

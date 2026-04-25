@@ -16,8 +16,12 @@ permissions:
   contents: write   # commit refreshed site/data/ back to main
 
 jobs:
-  build:
+  fetch:
     runs-on: ubuntu-latest
+    # Hard ceiling is 6h; leave 10m buffer for post-steps (save cache, upload artifact)
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,9 +43,10 @@ jobs:
             pipeline-checkpoints-
 
       - name: Fetch repository data
+        id: fetch_data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: nix develop --command python scripts/fetch_data.py
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 19800
 
       - name: Save fetch_data checkpoint
         if: always()
@@ -49,24 +54,65 @@ jobs:
         with:
           path: |
             site/data/.fetch_checkpoint.json
-            site/data/.nc_checkpoint.json
             site/data/repos.json
           key: pipeline-checkpoints-${{ github.run_id }}-step1
 
+      - name: Check fetch completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch non-canonical awesome lists
+        if: steps.check.outputs.incomplete != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: nix develop --command python scripts/fetch_noncanonical.py
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 1800
 
-      - name: Save fetch_noncanonical checkpoint
+      - name: Save noncanonical checkpoint
         if: always()
         uses: actions/cache/save@v4
         with:
           path: |
-            site/data/.fetch_checkpoint.json
             site/data/.nc_checkpoint.json
             site/data/repos.json
           key: pipeline-checkpoints-${{ github.run_id }}-step2
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+  process:
+    needs: fetch
+    if: needs.fetch.outputs.incomplete != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
 
       - name: Enrich search data
         run: nix develop --command python scripts/enrich_data.py
@@ -81,5 +127,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/data/
+          # Data files are gitignored to avoid accidental local commits,
+          # but CI must force-add them so the site gets fresh data.
+          git add -f site/data/
           git diff --cached --quiet || (git commit -m "Update repos.json [skip ci]" && git push)
