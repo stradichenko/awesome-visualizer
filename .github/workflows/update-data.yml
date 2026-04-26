@@ -16,9 +16,9 @@ permissions:
   contents: write   # commit refreshed site/data/ back to main
 
 jobs:
-  fetch:
+  fetch-main:
     runs-on: ubuntu-latest
-    # Hard ceiling is 6h; leave 10m buffer for post-steps (save cache, upload artifact)
+    # Hard ceiling is 6h; leave 10m buffer for post-steps
     timeout-minutes: 350
     outputs:
       incomplete: ${{ steps.check.outputs.incomplete }}
@@ -46,7 +46,7 @@ jobs:
         id: fetch_data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: nix develop --command python scripts/fetch_data.py --max-runtime 19800
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
 
       - name: Save fetch_data checkpoint
         if: always()
@@ -94,9 +94,94 @@ jobs:
             site/data/.nc_checkpoint.json
           retention-days: 7
 
+  fetch-resume:
+    needs: fetch-main
+    if: always() && (needs.fetch-main.outputs.incomplete == 'true' || needs.fetch-main.result != 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Restore pipeline checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}
+          restore-keys: |
+            pipeline-checkpoints-
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Save fetch_data checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data/.fetch_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}-step1-resume
+
+      - name: Check fetch completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 1800
+
+      - name: Save noncanonical checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data/.nc_checkpoint.json
+            site/data/repos.json
+          key: pipeline-checkpoints-${{ github.run_id }}-step2-resume
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
   process:
-    needs: fetch
-    if: needs.fetch.outputs.incomplete != 'true'
+    needs: [fetch-main, fetch-resume]
+    if: always() && ((needs.fetch-main.result == 'success' && needs.fetch-main.outputs.incomplete != 'true') || (needs.fetch-resume.result == 'success' && needs.fetch-resume.outputs.incomplete != 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
