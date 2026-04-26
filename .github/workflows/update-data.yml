@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read          # checkout repo
+  contents: write         # push checkpoints branch + checkout repo
   pages: write            # deploy to GitHub Pages
   id-token: write         # OIDC for deploy-pages
 
@@ -33,31 +33,23 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore pipeline checkpoints
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            site/data/.fetch_checkpoint.json
-            site/data/.nc_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}
-          restore-keys: |
-            pipeline-checkpoints-
+      - name: Restore checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              git show origin/checkpoints:site/data/$f > site/data/$f 2>/dev/null || true
+            done
+            echo "Restored checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
 
       - name: Fetch repository data
         id: fetch_data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
-
-      - name: Save fetch_data checkpoint
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            site/data/.fetch_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}-step1
 
       - name: Check fetch completion
         id: check_fetch
@@ -75,15 +67,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
-
-      - name: Save noncanonical checkpoint
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            site/data/.nc_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}-step2
 
       - name: Check overall completion
         id: check
@@ -111,6 +94,30 @@ jobs:
             site/data/.fetch_checkpoint.json
             site/data/.nc_checkpoint.json
           retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Stash checkpoint files temporarily
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          # Create orphan branch with only checkpoint files
+          git checkout --orphan checkpoints-temp
+          git reset
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          git add -f site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          # Return to main for any follow-up steps
+          git checkout -f main
 
   fetch-resume:
     needs: fetch-main
@@ -128,16 +135,17 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore pipeline checkpoints
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            site/data/.fetch_checkpoint.json
-            site/data/.nc_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}
-          restore-keys: |
-            pipeline-checkpoints-
+      - name: Restore checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              git show origin/checkpoints:site/data/$f > site/data/$f 2>/dev/null || true
+            done
+            echo "Restored checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
 
       - name: Download data artifact
         uses: actions/download-artifact@v4
@@ -150,15 +158,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
-
-      - name: Save fetch_data checkpoint
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            site/data/.fetch_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}-step1-resume
 
       - name: Check fetch completion
         id: check_fetch
@@ -176,15 +175,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
-
-      - name: Save noncanonical checkpoint
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            site/data/.nc_checkpoint.json
-            site/data/repos.json
-          key: pipeline-checkpoints-${{ github.run_id }}-step2-resume
 
       - name: Check overall completion
         id: check
@@ -212,6 +202,27 @@ jobs:
             site/data/.fetch_checkpoint.json
             site/data/.nc_checkpoint.json
           retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          git reset
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          git add -f site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
 
   process:
     needs: [fetch-main, fetch-resume]
