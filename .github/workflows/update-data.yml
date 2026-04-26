@@ -13,7 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write   # commit refreshed site/data/ back to main
+  contents: read          # checkout repo
+  pages: write            # deploy to GitHub Pages
+  id-token: write         # OIDC for deploy-pages
 
 jobs:
   fetch-main:
@@ -183,6 +185,9 @@ jobs:
     needs: [fetch-main, fetch-resume]
     if: always() && ((needs.fetch-main.result == 'success' && needs.fetch-main.outputs.incomplete != 'true') || (needs.fetch-resume.result == 'success' && needs.fetch-resume.outputs.incomplete != 'true'))
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -208,11 +213,11 @@ jobs:
       - name: Split data for lazy loading
         run: nix develop --command python scripts/split_data.py
 
-      - name: Commit updated data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Data files are gitignored to avoid accidental local commits,
-          # but CI must force-add them so the site gets fresh data.
-          git add -f site/data/
-          git diff --cached --quiet || (git commit -m "Update repos.json [skip ci]" && git push)
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
