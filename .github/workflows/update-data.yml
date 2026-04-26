@@ -60,7 +60,7 @@ jobs:
           key: pipeline-checkpoints-${{ github.run_id }}-step1
 
       - name: Check fetch completion
-        id: check
+        id: check_fetch
         if: always()
         run: |
           if [ -f site/data/.incomplete_fetch ]; then
@@ -71,10 +71,10 @@ jobs:
           fi
 
       - name: Fetch non-canonical awesome lists
-        if: steps.check.outputs.incomplete != 'true'
+        if: steps.check_fetch.outputs.incomplete != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 1800
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
 
       - name: Save noncanonical checkpoint
         if: always()
@@ -84,6 +84,22 @@ jobs:
             site/data/.nc_checkpoint.json
             site/data/repos.json
           key: pipeline-checkpoints-${{ github.run_id }}-step2
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload data artifact
         if: always()
@@ -145,7 +161,7 @@ jobs:
           key: pipeline-checkpoints-${{ github.run_id }}-step1-resume
 
       - name: Check fetch completion
-        id: check
+        id: check_fetch
         if: always()
         run: |
           if [ -f site/data/.incomplete_fetch ]; then
@@ -156,10 +172,10 @@ jobs:
           fi
 
       - name: Fetch non-canonical awesome lists
-        if: steps.check.outputs.incomplete != 'true'
+        if: steps.check_fetch.outputs.incomplete != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 1800
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
 
       - name: Save noncanonical checkpoint
         if: always()
@@ -169,6 +185,22 @@ jobs:
             site/data/.nc_checkpoint.json
             site/data/repos.json
           key: pipeline-checkpoints-${{ github.run_id }}-step2-resume
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload data artifact
         if: always()
