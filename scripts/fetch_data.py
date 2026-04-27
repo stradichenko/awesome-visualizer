@@ -646,6 +646,10 @@ def main():
         with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
             futures = {pool.submit(_fetch_sublist, (i, sl)): i for i, sl in enumerate(sublists)}
             for future in as_completed(futures):
+                if runtime_exceeded(start_time, max_runtime):
+                    print("\n[max-runtime] Approaching limit during README fetch. Exiting.")
+                    mark_incomplete()
+                    sys.exit(0)
                 idx, sl, subreadme = future.result()
                 sublist_results[idx] = (sl, subreadme)
 
@@ -909,7 +913,18 @@ def main():
 
             candidates = []
             with ThreadPoolExecutor(max_workers=README_WORKERS) as pool:
-                for r, subreadme in pool.map(_fetch_candidate_readme, potential):
+                futures = {pool.submit(_fetch_candidate_readme, r): r for r in potential}
+                for future in as_completed(futures):
+                    if runtime_exceeded(start_time, max_runtime):
+                        print(f"\n[max-runtime] Approaching limit during depth {depth} README fetch. Saving checkpoint.")
+                        save_checkpoint("discovery_done", {
+                            "all_repos": all_repos,
+                            "all_resources": all_resources,
+                            "cat_meta": cat_meta,
+                        })
+                        mark_incomplete()
+                        sys.exit(0)
+                    r, subreadme = future.result()
                     if not subreadme or not has_awesome_badge(subreadme):
                         r["is_awesome_list"] = False
                         continue
@@ -1049,7 +1064,11 @@ def main():
     cat_health = {}  # cid -> [health scores]
     cat_langs = {}   # cid -> {lang: count}
     cat_subcats = {} # cid -> set of subcategory_ids
-    for r in all_repos:
+    for i, r in enumerate(all_repos):
+        if i % 5000 == 0 and runtime_exceeded(start_time, max_runtime):
+            print("\n[max-runtime] Approaching limit during output build. Exiting.")
+            mark_incomplete()
+            sys.exit(0)
         c = r["category"]
         cat_counts[c] = cat_counts.get(c, 0) + 1
         cat_health.setdefault(c, []).append(r.get("health", 0))

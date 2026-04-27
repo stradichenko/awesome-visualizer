@@ -107,7 +107,7 @@ jobs:
           cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
           # Create orphan branch with only checkpoint files
           git checkout --orphan checkpoints-temp
-          git reset
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           mkdir -p site/data
           cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
           cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
@@ -213,7 +213,7 @@ jobs:
           cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
           cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
           git checkout --orphan checkpoints-temp
-          git reset
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           mkdir -p site/data
           cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
           cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
