@@ -38,7 +38,11 @@ jobs:
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
-              git show origin/checkpoints:site/data/$f > site/data/$f 2>/dev/null || true
+              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+              else
+                rm -f site/data/$f.tmp
+              fi
             done
             echo "Restored checkpoints from checkpoints branch."
           else
@@ -142,7 +146,11 @@ jobs:
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
-              git show origin/checkpoints:site/data/$f > site/data/$f 2>/dev/null || true
+              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+              else
+                rm -f site/data/$f.tmp
+              fi
             done
             echo "Restored checkpoints from checkpoints branch."
           else

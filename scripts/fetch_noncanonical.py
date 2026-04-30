@@ -102,8 +102,8 @@ def save_checkpoint(stage, data):
 
 
 def load_checkpoint():
-    """Load checkpoint if it exists. Returns (stage, data) or (None, None)."""
-    if CHECKPOINT_FILE.exists():
+    """Load checkpoint if it exists and is non-empty. Returns (stage, data) or (None, None)."""
+    if CHECKPOINT_FILE.exists() and CHECKPOINT_FILE.stat().st_size > 0:
         with CHECKPOINT_FILE.open() as f:
             cp = json.load(f)
         return cp.get("stage"), cp.get("data")
