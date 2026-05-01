@@ -163,15 +163,27 @@ jobs:
           name: pipeline-data
           path: site/data/
 
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
       - name: Resume repository data fetch
         id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
 
       - name: Check fetch completion
         id: check_fetch
-        if: always()
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
         run: |
           if [ -f site/data/.incomplete_fetch ]; then
             echo "incomplete=true" >> "$GITHUB_OUTPUT"
@@ -181,7 +193,7 @@ jobs:
           fi
 
       - name: Fetch non-canonical awesome lists
-        if: steps.check_fetch.outputs.incomplete != 'true'
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
