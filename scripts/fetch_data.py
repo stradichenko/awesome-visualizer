@@ -611,6 +611,9 @@ def main():
         cat_meta = cp_data["cat_meta"]
         seen = {r["full_name"].lower() for r in all_repos}
         print(f"  Restored {len(all_repos)} repos, {len(all_resources)} resources")
+    elif cp_stage == "done":
+        print("\n  [checkpoint] fetch_data already complete. Nothing to do.")
+        return
     else:
         cp_stage = None  # No valid checkpoint
 
@@ -1170,8 +1173,9 @@ def main():
     size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
     print(f"\nDone. {len(all_repos)} repos, {len(unique_resources)} resources written to {OUTPUT_PATH} ({size_mb:.1f}MB)")
 
-    # Clean up checkpoint after successful completion
-    clear_checkpoint()
+    # Save a "done" checkpoint so CI knows fetch_data is complete
+    # (do not delete - the checkpoint branch needs it for resume logic)
+    save_checkpoint("done", {"status": "complete"})
     clear_incomplete()
 
 
