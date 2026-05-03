@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://stradichenko.github.io/awesome-visualizer/">
-    <img src="site/logo.svg" alt="Awesome Visualizer logo" width="200">
+    <img src="site/logo-awv-02.svg" alt="Awesome Visualizer logo" width="200">
   </a>
 </p>
 
