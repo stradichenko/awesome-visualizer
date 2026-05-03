@@ -38,10 +38,17 @@ jobs:
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
-              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
                 mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
               else
-                rm -f site/data/$f.tmp
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
             echo "Restored checkpoints from checkpoints branch."
@@ -109,7 +116,7 @@ jobs:
           cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
           cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
           cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
-          # Create orphan branch with only checkpoint files
+          # Create orphan branch with only checkpoint files (compressed)
           git checkout --orphan checkpoints-temp
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           mkdir -p site/data
@@ -117,7 +124,10 @@ jobs:
           cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
           cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
           for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
-            [ -f "$f" ] && git add -f "$f"
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
           done
           git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
           git branch -M checkpoints
@@ -146,10 +156,17 @@ jobs:
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
-              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
                 mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
               else
-                rm -f site/data/$f.tmp
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
             echo "Restored checkpoints from checkpoints branch."
@@ -241,7 +258,10 @@ jobs:
           cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
           cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
           for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
-            [ -f "$f" ] && git add -f "$f"
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
           done
           git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
           git branch -M checkpoints
@@ -269,10 +289,17 @@ jobs:
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
-              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
                 mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
               else
-                rm -f site/data/$f.tmp
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
             echo "Restored checkpoints from checkpoints branch."
@@ -364,7 +391,10 @@ jobs:
           cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
           cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
           for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
-            [ -f "$f" ] && git add -f "$f"
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
           done
           git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
           git branch -M checkpoints
