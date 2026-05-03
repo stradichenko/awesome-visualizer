@@ -248,9 +248,132 @@ jobs:
           git push -f origin checkpoints
           git checkout -f main
 
+  fetch-resume-2:
+    needs: fetch-resume
+    if: always() && (needs.fetch-resume.outputs.incomplete == 'true' || needs.fetch-resume.result != 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Restore checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              if git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+              else
+                rm -f site/data/$f.tmp
+              fi
+            done
+            echo "Restored checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            [ -f "$f" ] && git add -f "$f"
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
+
   process:
-    needs: [fetch-main, fetch-resume]
-    if: always() && ((needs.fetch-main.result == 'success' && needs.fetch-main.outputs.incomplete != 'true') || (needs.fetch-resume.result == 'success' && needs.fetch-resume.outputs.incomplete != 'true'))
+    needs: [fetch-main, fetch-resume, fetch-resume-2]
+    if: always() && ((needs.fetch-main.result == 'success' && needs.fetch-main.outputs.incomplete != 'true') || (needs.fetch-resume.result == 'success' && needs.fetch-resume.outputs.incomplete != 'true') || (needs.fetch-resume-2.result == 'success' && needs.fetch-resume-2.outputs.incomplete != 'true'))
     runs-on: ubuntu-latest
     environment:
       name: github-pages
