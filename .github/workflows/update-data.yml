@@ -33,7 +33,7 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore checkpoints from branch
+      - name: Restore missing checkpoints from branch
         run: |
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
@@ -51,7 +51,7 @@ jobs:
                 rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
-            echo "Restored checkpoints from checkpoints branch."
+            echo "Restored missing checkpoints from checkpoints branch."
           else
             echo "No checkpoints branch found - starting fresh."
           fi
@@ -151,11 +151,22 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore checkpoints from branch
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
         run: |
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
               # Try compressed version first (new format)
               if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
                 mv site/data/$f.gz.tmp site/data/$f.gz
@@ -169,16 +180,10 @@ jobs:
                 rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
-            echo "Restored checkpoints from checkpoints branch."
+            echo "Restored missing checkpoints from checkpoints branch."
           else
             echo "No checkpoints branch found - starting fresh."
           fi
-
-      - name: Download data artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-data
-          path: site/data/
 
       - name: Check if fetch_data resume is needed
         id: check_fetch_needed
@@ -284,11 +289,22 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore checkpoints from branch
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
         run: |
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
               # Try compressed version first (new format)
               if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
                 mv site/data/$f.gz.tmp site/data/$f.gz
@@ -302,16 +318,10 @@ jobs:
                 rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
-            echo "Restored checkpoints from checkpoints branch."
+            echo "Restored missing checkpoints from checkpoints branch."
           else
             echo "No checkpoints branch found - starting fresh."
           fi
-
-      - name: Download data artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-data
-          path: site/data/
 
       - name: Check if fetch_data resume is needed
         id: check_fetch_needed
@@ -417,11 +427,22 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore checkpoints from branch
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
         run: |
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
               # Try compressed version first (new format)
               if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
                 mv site/data/$f.gz.tmp site/data/$f.gz
@@ -435,16 +456,10 @@ jobs:
                 rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
-            echo "Restored checkpoints from checkpoints branch."
+            echo "Restored missing checkpoints from checkpoints branch."
           else
             echo "No checkpoints branch found - starting fresh."
           fi
-
-      - name: Download data artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-data
-          path: site/data/
 
       - name: Check if fetch_data resume is needed
         id: check_fetch_needed
@@ -550,11 +565,22 @@ jobs:
       - name: Ensure data directory exists
         run: mkdir -p site/data
 
-      - name: Restore checkpoints from branch
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
         run: |
           git fetch origin checkpoints || true
           if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
             for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
               # Try compressed version first (new format)
               if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
                 mv site/data/$f.gz.tmp site/data/$f.gz
@@ -568,16 +594,10 @@ jobs:
                 rm -f site/data/$f.tmp site/data/$f.gz.tmp
               fi
             done
-            echo "Restored checkpoints from checkpoints branch."
+            echo "Restored missing checkpoints from checkpoints branch."
           else
             echo "No checkpoints branch found - starting fresh."
           fi
-
-      - name: Download data artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-data
-          path: site/data/
 
       - name: Check if fetch_data resume is needed
         id: check_fetch_needed

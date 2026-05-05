@@ -769,10 +769,26 @@ def main():
 
     # Helper to crawl a list of validated entries and produce repos + resources
     def crawl_lists(validated, tier_label):
+        # Re-fetch stale/missing READMEs before parsing
+        to_fetch = [(i, v) for i, v in enumerate(validated) if "readme" not in v]
+        if to_fetch:
+            print(f"\n  Fetching {len(to_fetch)} fresh READMEs for {tier_label} lists...")
+            def _fetch(entry_info):
+                idx, v = entry_info
+                readme = fetch_repo_readme(v["full_name"], token)
+                return idx, readme
+            with ThreadPoolExecutor(max_workers=VALIDATION_WORKERS) as pool:
+                for idx, readme in pool.map(_fetch, to_fetch):
+                    validated[idx]["readme"] = readme
+
         links = []
         resources = []
         cat_meta = {}
         for v in validated:
+            readme = v.get("readme", "")
+            if not readme:
+                print(f"  SKIP {v['full_name']}: no README", flush=True)
+                continue
             cid = slugify(v["name"])
             cname = v["name"].replace("-", " ").replace("awesome ", "").replace("Awesome ", "").title()
             if cid in cat_meta:
@@ -784,8 +800,8 @@ def main():
                 "stars": v["stars"],
                 "link_count": v["link_count"],
             }
-            parsed = parse_list_readme(v["readme"], cname, cid, v["full_name"])
-            res = extract_resource_links(v["readme"], cname, cid, v["full_name"])
+            parsed = parse_list_readme(readme, cname, cid, v["full_name"])
+            res = extract_resource_links(readme, cname, cid, v["full_name"])
             print(f"  {v['full_name']}: {len(parsed)} repos, {len(res)} resources -> {cname}")
             links.extend(parsed)
             resources.extend(res)
@@ -1006,6 +1022,11 @@ def main():
 
         uo_cats, uo_repos, uo_seen = fetch_and_summarize(uo_links, uo_meta, "unofficial", exclude_set)
 
+        # Strip cached READMEs from checkpoint to force fresh fetches on resume
+        for entry in noncanonical:
+            entry.pop("readme", None)
+        for entry in unofficial:
+            entry.pop("readme", None)
         save_checkpoint("unofficial_done", {
             "noncanonical": noncanonical,
             "uo_cats": uo_cats,
