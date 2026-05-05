@@ -270,7 +270,7 @@ jobs:
 
   fetch-resume-2:
     needs: fetch-resume
-    if: always() && (needs.fetch-resume.outputs.incomplete == 'true' || needs.fetch-resume.result != 'success')
+    if: always() && (needs.fetch-resume.outputs.incomplete == 'true' || needs.fetch-resume.result == 'failure' || needs.fetch-resume.result == 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     outputs:
@@ -403,7 +403,7 @@ jobs:
 
   fetch-resume-3:
     needs: fetch-resume-2
-    if: always() && (needs.fetch-resume-2.outputs.incomplete == 'true' || needs.fetch-resume-2.result != 'success')
+    if: always() && (needs.fetch-resume-2.outputs.incomplete == 'true' || needs.fetch-resume-2.result == 'failure' || needs.fetch-resume-2.result == 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     outputs:
@@ -536,7 +536,7 @@ jobs:
 
   fetch-resume-4:
     needs: fetch-resume-3
-    if: always() && (needs.fetch-resume-3.outputs.incomplete == 'true' || needs.fetch-resume-3.result != 'success')
+    if: always() && (needs.fetch-resume-3.outputs.incomplete == 'true' || needs.fetch-resume-3.result == 'failure' || needs.fetch-resume-3.result == 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     outputs:
