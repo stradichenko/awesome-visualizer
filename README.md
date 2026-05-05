@@ -31,7 +31,7 @@
 
 <h4 align="center">
 
-[![Share on X](https://img.shields.io/badge/-Share%20on%20X-gray?style=flat&logo=x)](https://x.com/intent/tweet?text=Explore%20the%20awesome%20ecosystem%20-%20browse%2C%20search%2C%20and%20compare%2010%2C000%2B%20repos%20with%20health%20scores%20and%20visualizations.&url=https://github.com/stradichenko/awesome-visualizer&hashtags=awesome,github,opensource)
+[![Share on X](https://img.shields.io/badge/-Share%20on%20X-gray?style=flat&logo=x)](https://x.com/intent/tweet?text=Explore%20the%20awesome%20ecosystem%20-%20browse%2C%20search%2C%20and%20compare%20~90%2C000%20repos%20with%20health%20scores%20and%20visualizations.&url=https://github.com/stradichenko/awesome-visualizer&hashtags=awesome,github,opensource)
 
 </h4>
 
@@ -57,7 +57,7 @@ A list becomes a category if it makes it through three stages:
 
 1. **Discovery**: the list is found either by recursively crawling [sindresorhus/awesome](https://github.com/sindresorhus/awesome) (depth 3) or by querying GitHub Search for repos matching `awesome in:name`, the `awesome-list` topic, or the `curated-list` topic.
 2. **Validation**: the list's README is fetched and inspected. To pass, it must contain at least 10 GitHub repository links and at least 2 section headings (`##` to `####`). Lists carrying the [![Awesome](https://awesome.re/badge.svg)](https://awesome.re) badge are routed to the official or unofficial tier; lists without the badge but with link-density indicators of a curated resource list are routed to non-canonical.
-3. **Quality filter**: the linked repos are fetched in batches and a category-level health score is computed (mean health of every repo the list references, including ones already in our DB). Categories with average health below 50 are dropped. This keeps spam, abandoned plugin dumps, and starter-template lists out.
+3. **Quality filter**: the linked repos are fetched in batches and a category-level health score is computed (mean health of every repo the list references, including ones already in our DB). For the non-canonical tier, categories with average health below 50 are dropped. This keeps spam, abandoned plugin dumps, and starter-template lists out. Official and unofficial lists are preserved regardless of health score.
 
 ### Tiers
 
@@ -88,7 +88,6 @@ A 0-100 heuristic computed per repository from eight weighted signals (max total
 | Open PRs | 8 | Active collaboration and demand |
 | Fork-to-star ratio | 7 | Downstream adoption and community use |
 | Description present | 7 | Basic maintenance hygiene |
-r
 
 ### Subcategories
 
@@ -101,7 +100,7 @@ A few things worth knowing about the data:
 - **GitHub Search 1000-result cap:** The Search API returns at most 1000 results per query, regardless of paging. The pipeline works around this with multiple star-range bucket queries (`50..200`, `200..350`, ..., `5000..50000`), but a list outside those buckets or whose star count straddles a boundary on a given day may be missed.
 - **Discovery is name-biased:** Non-canonical discovery requires either `awesome` in the repo name or membership in the `awesome-list`/`curated-list` topics. A high-quality curated list with neither will not be found.
 - **Star floor of 50:** Lists below 50 stars are filtered out of search results entirely.
-- **Category-level health filter (>= 50 avg):** A list whose linked repos average below 50 health is dropped. This sometimes excludes legitimate plugin lists for niche tools where most plugins are individually small.
+- **Non-canonical health filter (>= 50 avg):** Non-canonical lists whose linked repos average below 50 health are dropped. Official and unofficial lists are preserved regardless of health score. This sometimes excludes legitimate plugin lists for niche tools where most plugins are individually small.
 - **README format dependence:** The parser handles markdown links (`[name](url)`) and HTML anchors (`<a href="url">name</a>`). Lists that link via images, plain text, raw URLs in tables, or unusual markup will yield few extracted repos.
 - **Badge detection is regex-based:** Image-based badge variants that diverge significantly from the standard `awesome.re/badge.svg` form may be missed, pushing an otherwise official-looking list into the non-canonical tier.
 - **Renamed/transferred repos:** GraphQL doesn't follow redirects, so the pipeline does a REST fallback to recover renamed repos. Repos that have been deleted or made private since the source list was last updated are silently dropped.
@@ -185,8 +184,8 @@ python scripts/run_pipeline.py
 Or run individual steps:
 
 ```sh
-python scripts/fetch_data.py          # Step 1 - crawl + GraphQL (needs token, ~30 min)
-python scripts/fetch_noncanonical.py  # Step 2 - GitHub Search (needs token, ~30 min)
+python scripts/fetch_data.py          # Step 1 - crawl + GraphQL (needs token, ~30-60 min)
+python scripts/fetch_noncanonical.py  # Step 2 - GitHub Search (needs token, ~30-60 min)
 python scripts/enrich_data.py         # Step 3 - search keywords (~3 min)
 python scripts/compute_viz.py         # Step 4 - chart aggregations (~1 min)
 python scripts/split_data.py          # Step 5 - lazy-load split (~30 sec)
@@ -211,7 +210,7 @@ The pipeline runs as five sequential steps, orchestrated by `scripts/run_pipelin
 | 4 | `compute_viz.py` | Pre-compute chart aggregations (language distribution, health histogram, etc.) | No |
 | 5 | `split_data.py` | Split the monolithic repos.json into tier-based files for lazy loading | No |
 
-Steps 1-2 are the expensive ones (30-60 min total, dominated by GitHub API rate limits). Steps 3-5 are pure computation and finish in under 5 minutes.
+Steps 1-2 are the expensive ones (~12 h total in CI, dominated by GitHub API rate limits; locally ~1-2 h with a personal token). Steps 3-5 are pure computation and finish in under 5 minutes.
 
 ### Save points
 
@@ -243,7 +242,9 @@ The GitHub Actions workflow ([.github/workflows/update-data.yml](.github/workflo
 - **Weekly** at 02:00 UTC on Wednesdays via cron
 - **Manually** via `workflow_dispatch` from the Actions tab
 
-It runs the full data pipeline inside the Nix dev shell, commits any changes under `site/data/` back to `main`, then deploys `site/` to GitHub Pages using `actions/deploy-pages`.
+Because a full fetch exceeds GitHub Actions' 6-hour-per-job limit, the workflow splits work across a chained sequence of up to five fetch jobs (`fetch-main` -> `fetch-resume` -> `fetch-resume-2` -> `fetch-resume-3` -> `fetch-resume-4`). Each job saves gzipped checkpoints to an orphan `checkpoints` branch and passes data artifacts forward. The chain automatically extends only as far as needed; if a stage completes, subsequent resume jobs are skipped.
+
+Once fetching is complete, a final `process` job runs steps 3-5 (enrich, compute viz, split) and deploys `site/` directly to GitHub Pages via `actions/upload-pages-artifact` and `actions/deploy-pages`. Data files are never committed back to `main`.
 
 ## Design System
 
