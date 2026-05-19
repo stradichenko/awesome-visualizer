@@ -807,6 +807,59 @@ def main():
             resources.extend(res)
         return links, resources, cat_meta
 
+    def _compute_categories(fetched, cat_meta, cat_known_health, tier_label):
+        """Compute category metadata and filter by health from fetched repos."""
+        cd_map = {}
+        for r in fetched:
+            c = r["category"]
+            if c not in cd_map:
+                cd_map[c] = {"repos": [], "health_sum": 0, "health_count": 0, "langs": {}}
+            cd_map[c]["repos"].append(r)
+            cd_map[c]["health_sum"] += r.get("health", 0)
+            cd_map[c]["health_count"] += 1
+            lang = r.get("language", "")
+            if lang:
+                cd_map[c]["langs"][lang] = cd_map[c]["langs"].get(lang, 0) + 1
+
+        for cid, known_scores in cat_known_health.items():
+            if cid not in cd_map:
+                continue
+            cd_map[cid]["health_sum"] += sum(known_scores)
+            cd_map[cid]["health_count"] += len(known_scores)
+
+        categories = []
+        kept = []
+        dropped = 0
+        for cid, cd in cd_map.items():
+            count = len(cd["repos"])
+            health_count = cd["health_count"]
+            if health_count == 0:
+                continue
+            avg_health = round(cd["health_sum"] / health_count)
+            if avg_health < MIN_HEALTH:
+                dropped += 1
+                continue
+            meta = cat_meta.get(cid, {})
+            top_langs = sorted(cd["langs"].items(), key=lambda x: -x[1])[:5]
+            sub_ids = {r.get("subcategory_id", "general") for r in cd["repos"]}
+            categories.append({
+                "id": cid,
+                "name": meta.get("name", cid.replace("-", " ").title()),
+                "count": count,
+                "source_repo": meta.get("source_repo", ""),
+                "avg_health": avg_health,
+                "is_awesome_list": tier_label == "unofficial",
+                "tier": tier_label,
+                "subcategory_count": len(sub_ids),
+                "top_languages": [{"name": name, "count": c} for name, c in top_langs],
+            })
+            kept.extend(cd["repos"])
+
+        categories.sort(key=lambda c: c["name"])
+        print(f"  {len(categories)} {tier_label} categories pass health filter (dropped {dropped})")
+        print(f"  {len(kept)} repos in qualifying categories")
+        return categories, kept
+
     # Helper to batch-fetch via GraphQL and build category summaries
     def fetch_and_summarize(all_links, cat_meta, tier_label, dedup_seed, resolve_redirects=True):
         # Build existing-repo health lookup so deduped entries can still
@@ -903,8 +956,9 @@ def main():
                 fetched.extend(repos)
 
         if _runtime_broke:
-            print("\n[max-runtime] Batch retry interrupted by runtime limit. Saving checkpoint and exiting.")
-            return [], fetched, seen
+            print("\n[max-runtime] Batch retry interrupted by runtime limit. Computing categories from fetched repos...")
+            categories, kept = _compute_categories(fetched, cat_meta, cat_known_health, tier_label)
+            return categories, kept, seen
 
         # Recover renamed/transferred repos via REST API redirect
         if all_missed and resolve_redirects:
@@ -915,8 +969,9 @@ def main():
                 redirected = []
                 for idx, info in enumerate(to_resolve, 1):
                     if runtime_exceeded(start_time, max_runtime):
-                        print("\n[max-runtime] Approaching limit during redirect resolution. Saving and exiting.")
-                        return [], fetched, seen
+                        print("\n[max-runtime] Approaching limit during redirect resolution. Computing categories from fetched repos...")
+                        categories, kept = _compute_categories(fetched, cat_meta, cat_known_health, tier_label)
+                        return categories, kept, seen
                     if idx % 200 == 0 or idx == len(to_resolve):
                         print(f"    [{idx}/{len(to_resolve)}] checked...", flush=True)
                     time.sleep(0.75)
@@ -933,8 +988,9 @@ def main():
                     redir_batches = [redirected[i:i + BATCH_SIZE] for i in range(0, len(redirected), BATCH_SIZE)]
                     for rb in redir_batches:
                         if runtime_exceeded(start_time, max_runtime):
-                            print("\n[max-runtime] Approaching limit during redirect re-query. Saving and exiting.")
-                            return [], fetched, seen
+                            print("\n[max-runtime] Approaching limit during redirect re-query. Computing categories from fetched repos...")
+                            categories, kept = _compute_categories(fetched, cat_meta, cat_known_health, tier_label)
+                            return categories, kept, seen
                         time.sleep(GQL_DELAY)
                         query = build_graphql_query(rb)
                         data, _errors = github_graphql(query, token)
@@ -949,59 +1005,7 @@ def main():
             print(f"  Skipping redirect resolution for {len(all_missed)} missed project repos")
 
         # Compute category stats and filter by health
-        # Health is computed over ALL repos a list references (unique + already-known)
-        # so that deduplication against the official DB doesn't penalise quality lists.
-        print(f"\nComputing {tier_label} category statistics...")
-        cd_map = {}
-        for r in fetched:
-            c = r["category"]
-            if c not in cd_map:
-                cd_map[c] = {"repos": [], "health_sum": 0, "health_count": 0, "langs": {}}
-            cd_map[c]["repos"].append(r)
-            cd_map[c]["health_sum"] += r.get("health", 0)
-            cd_map[c]["health_count"] += 1
-            lang = r.get("language", "")
-            if lang:
-                cd_map[c]["langs"][lang] = cd_map[c]["langs"].get(lang, 0) + 1
-
-        # Supplement health counts with already-known repos from the DB
-        for cid, known_scores in cat_known_health.items():
-            if cid not in cd_map:
-                continue
-            cd_map[cid]["health_sum"] += sum(known_scores)
-            cd_map[cid]["health_count"] += len(known_scores)
-
-        categories = []
-        kept = []
-        dropped = 0
-        for cid, cd in cd_map.items():
-            count = len(cd["repos"])  # stored repos (unique only)
-            health_count = cd["health_count"]  # includes already-known repos
-            if health_count == 0:
-                continue
-            avg_health = round(cd["health_sum"] / health_count)
-            if avg_health < MIN_HEALTH:
-                dropped += 1
-                continue
-            meta = cat_meta.get(cid, {})
-            top_langs = sorted(cd["langs"].items(), key=lambda x: -x[1])[:5]
-            sub_ids = {r.get("subcategory_id", "general") for r in cd["repos"]}
-            categories.append({
-                "id": cid,
-                "name": meta.get("name", cid.replace("-", " ").title()),
-                "count": count,
-                "source_repo": meta.get("source_repo", ""),
-                "avg_health": avg_health,
-                "is_awesome_list": tier_label == "unofficial",
-                "tier": tier_label,
-                "subcategory_count": len(sub_ids),
-                "top_languages": [{"name": name, "count": c} for name, c in top_langs],
-            })
-            kept.extend(cd["repos"])
-
-        categories.sort(key=lambda c: c["name"])
-        print(f"  {len(categories)} {tier_label} categories pass health filter (dropped {dropped})")
-        print(f"  {len(kept)} repos in qualifying categories")
+        categories, kept = _compute_categories(fetched, cat_meta, cat_known_health, tier_label)
         return categories, kept, seen
 
     if resume:
@@ -1010,6 +1014,22 @@ def main():
         uo_repos = cp_data["uo_repos"]
         uo_resources = cp_data["uo_resources"]
         uo_seen = set(cp_data["uo_seen"])
+
+        # Recovery: corrupted checkpoints from runtime-interrupted fetch_and_summarize
+        # may have repos but no categories. Recompute categories from the repos.
+        if not uo_cats and uo_repos:
+            print("  [checkpoint] Recovering unofficial categories from checkpoint repos...")
+            # Build partial cat_meta from resources (they carry source_repo)
+            recovered_meta = {}
+            for res in uo_resources:
+                cid = res.get("category")
+                if cid and cid not in recovered_meta:
+                    recovered_meta[cid] = {
+                        "name": cid.replace("-", " ").title(),
+                        "source_repo": res.get("source_repo", ""),
+                    }
+            uo_cats, _ = _compute_categories(uo_repos, recovered_meta, {}, "unofficial")
+
         print(f"  Restored: {len(uo_cats)} unofficial categories, {len(uo_repos)} unofficial repos")
         print(f"  {len(noncanonical)} non-canonical lists to process")
     else:
