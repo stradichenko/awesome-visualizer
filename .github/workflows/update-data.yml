@@ -79,6 +79,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
 
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
       - name: Check overall completion
         id: check
         if: always()
@@ -220,6 +233,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
 
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
       - name: Check overall completion
         id: check
         if: always()
@@ -357,6 +383,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
 
       - name: Check overall completion
         id: check
@@ -496,6 +535,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
 
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
       - name: Check overall completion
         id: check
         if: always()
@@ -633,6 +685,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
 
       - name: Check overall completion
         id: check

@@ -1008,73 +1008,99 @@ def main():
         categories, kept = _compute_categories(fetched, cat_meta, cat_known_health, tier_label)
         return categories, kept, seen
 
+    skip_crawls = False
     if resume:
-        print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping steps 1-3")
-        uo_cats = cp_data["uo_cats"]
-        uo_repos = cp_data["uo_repos"]
-        uo_resources = cp_data["uo_resources"]
-        uo_seen = set(cp_data["uo_seen"])
+        if cp_stage == "nc_done":
+            print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping to output writing")
+            uo_cats = cp_data["uo_cats"]
+            uo_repos = cp_data["uo_repos"]
+            uo_resources = cp_data["uo_resources"]
+            nc_cats = cp_data["nc_cats"]
+            nc_repos = cp_data["nc_repos"]
+            nc_resources = cp_data["nc_resources"]
+            skip_crawls = True
+        elif cp_stage == "unofficial_done":
+            print(f"\n  [checkpoint] Resuming from '{cp_stage}' - skipping steps 1-3")
+            uo_cats = cp_data["uo_cats"]
+            uo_repos = cp_data["uo_repos"]
+            uo_resources = cp_data["uo_resources"]
+            uo_seen = set(cp_data["uo_seen"])
 
-        # Recovery: corrupted checkpoints from runtime-interrupted fetch_and_summarize
-        # may have repos but no categories. Recompute categories from the repos.
-        if not uo_cats and uo_repos:
-            print("  [checkpoint] Recovering unofficial categories from checkpoint repos...")
-            # Build partial cat_meta from resources (they carry source_repo)
-            recovered_meta = {}
-            for res in uo_resources:
-                cid = res.get("category")
-                if cid and cid not in recovered_meta:
-                    recovered_meta[cid] = {
-                        "name": cid.replace("-", " ").title(),
-                        "source_repo": res.get("source_repo", ""),
-                    }
-            uo_cats, _ = _compute_categories(uo_repos, recovered_meta, {}, "unofficial")
+            # Recovery: corrupted checkpoints from runtime-interrupted fetch_and_summarize
+            # may have repos but no categories. Recompute categories from the repos.
+            if not uo_cats and uo_repos:
+                print("  [checkpoint] Recovering unofficial categories from checkpoint repos...")
+                # Build partial cat_meta from resources (they carry source_repo)
+                recovered_meta = {}
+                for res in uo_resources:
+                    cid = res.get("category")
+                    if cid and cid not in recovered_meta:
+                        recovered_meta[cid] = {
+                            "name": cid.replace("-", " ").title(),
+                            "source_repo": res.get("source_repo", ""),
+                        }
+                uo_cats, _ = _compute_categories(uo_repos, recovered_meta, {}, "unofficial")
 
-        print(f"  Restored: {len(uo_cats)} unofficial categories, {len(uo_repos)} unofficial repos")
-        print(f"  {len(noncanonical)} non-canonical lists to process")
-    else:
-        # Step 3: Crawl unofficial lists
-        if unofficial:
-            print("\nCrawling unofficial lists for repos...")
-            uo_links, uo_resources, uo_meta = crawl_lists(unofficial, "unofficial")
+            print(f"  Restored: {len(uo_cats)} unofficial categories, {len(uo_repos)} unofficial repos")
+            print(f"  {len(noncanonical)} non-canonical lists to process")
         else:
-            uo_links, uo_resources, uo_meta = [], [], {}
+            print(f"\n  [checkpoint] Unknown stage '{cp_stage}' - starting fresh")
+            resume = False
+            skip_crawls = False
 
-        uo_cats, uo_repos, uo_seen = fetch_and_summarize(uo_links, uo_meta, "unofficial", exclude_set)
+    if not skip_crawls:
+        if not resume:
+            # Step 3: Crawl unofficial lists
+            if unofficial:
+                print("\nCrawling unofficial lists for repos...")
+                uo_links, uo_resources, uo_meta = crawl_lists(unofficial, "unofficial")
+            else:
+                uo_links, uo_resources, uo_meta = [], [], {}
 
-        # Strip cached READMEs from checkpoint to force fresh fetches on resume
-        for entry in noncanonical:
-            entry.pop("readme", None)
-        for entry in unofficial:
-            entry.pop("readme", None)
-        save_checkpoint("unofficial_done", {
-            "noncanonical": noncanonical,
+            uo_cats, uo_repos, uo_seen = fetch_and_summarize(uo_links, uo_meta, "unofficial", exclude_set)
+
+            # Strip cached READMEs from checkpoint to force fresh fetches on resume
+            for entry in noncanonical:
+                entry.pop("readme", None)
+            for entry in unofficial:
+                entry.pop("readme", None)
+            save_checkpoint("unofficial_done", {
+                "noncanonical": noncanonical,
+                "uo_cats": uo_cats,
+                "uo_repos": uo_repos,
+                "uo_resources": uo_resources,
+                "uo_seen": list(uo_seen),
+            })
+
+        # Runtime guard before non-canonical crawling
+        if runtime_exceeded(start_time, max_runtime):
+            print("\n[max-runtime] Approaching limit after unofficial lists. Saving checkpoint and exiting.")
+            mark_incomplete()
+            sys.exit(0)
+
+        # Step 4: Crawl non-canonical lists
+        if noncanonical:
+            print("\nCrawling non-canonical lists for repos...")
+            nc_links, nc_resources, nc_meta = crawl_lists(noncanonical, "non-canonical")
+        else:
+            nc_links, nc_resources, nc_meta = [], [], {}
+
+        nc_cats, nc_repos, _ = fetch_and_summarize(nc_links, nc_meta, "non-canonical", uo_seen, resolve_redirects=False)
+
+        save_checkpoint("nc_done", {
             "uo_cats": uo_cats,
             "uo_repos": uo_repos,
             "uo_resources": uo_resources,
-            "uo_seen": list(uo_seen),
+            "nc_cats": nc_cats,
+            "nc_repos": nc_repos,
+            "nc_resources": nc_resources,
         })
 
-    # Runtime guard before non-canonical crawling
-    if runtime_exceeded(start_time, max_runtime):
-        print("\n[max-runtime] Approaching limit after unofficial lists. Saving checkpoint and exiting.")
-        mark_incomplete()
-        sys.exit(0)
-
-    # Step 4: Crawl non-canonical lists
-    if noncanonical:
-        print("\nCrawling non-canonical lists for repos...")
-        nc_links, nc_resources, nc_meta = crawl_lists(noncanonical, "non-canonical")
-    else:
-        nc_links, nc_resources, nc_meta = [], [], {}
-
-    nc_cats, nc_repos, _ = fetch_and_summarize(nc_links, nc_meta, "non-canonical", uo_seen, resolve_redirects=False)
-
-    # Runtime guard before writing output
-    if runtime_exceeded(start_time, max_runtime):
-        print("\n[max-runtime] Approaching limit after non-canonical lists. Saving checkpoint and exiting.")
-        mark_incomplete()
-        sys.exit(0)
+        # Runtime guard before writing output
+        if runtime_exceeded(start_time, max_runtime):
+            print("\n[max-runtime] Approaching limit after non-canonical lists. Saving checkpoint and exiting.")
+            mark_incomplete()
+            sys.exit(0)
 
     # Step 5: Write back to repos.json
     existing["unofficial_categories"] = uo_cats
