@@ -55,7 +55,7 @@ REST_DELAY = 0.5   # Core API: 5000 req/hr
 SEARCH_PAGES = 10   # 10 pages x 100 results = 1000 candidates max
 MIN_STARS = 50      # Skip very low-quality repos
 MIN_LINK_COUNT = 10 # README must have at least this many GitHub links
-MIN_HEALTH = 50     # Average health of linked repos must exceed this
+MIN_HEALTH = 40     # Average health of linked repos must exceed this
 VALIDATION_WORKERS = 3  # Parallel README fetches during validation
 GQL_WORKERS = 2
 AWESOME_BADGE_RE = re.compile(r"awesome\.re/badge", re.IGNORECASE)
