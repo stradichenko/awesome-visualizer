@@ -1,0 +1,794 @@
+name: Update Data
+
+on:
+  # Weekly: Wednesdays at 02:00 UTC
+  schedule:
+    - cron: '0 2 * * 3'
+  # Manual trigger from the Actions tab
+  workflow_dispatch:
+
+# Allow only one pipeline run at a time; do not cancel in-progress runs
+concurrency:
+  group: update-data-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write         # push checkpoints branch + checkout repo
+  pages: write            # deploy to GitHub Pages
+  id-token: write         # OIDC for deploy-pages
+
+jobs:
+  fetch-main:
+    runs-on: ubuntu-latest
+    # Hard ceiling is 6h; leave 10m buffer for post-steps
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Restore missing checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
+              else
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
+              fi
+            done
+            echo "Restored missing checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Fetch repository data
+        id: fetch_data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Stash checkpoint files temporarily
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          # Create orphan branch with only checkpoint files (compressed)
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          # Return to main for any follow-up steps
+          git checkout -f main
+
+  fetch-resume:
+    needs: fetch-main
+    if: always() && (needs.fetch-main.outputs.incomplete == 'true' || needs.fetch-main.result != 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
+              else
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
+              fi
+            done
+            echo "Restored missing checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
+
+  fetch-resume-2:
+    needs: fetch-resume
+    if: always() && (needs.fetch-resume.outputs.incomplete == 'true' || needs.fetch-resume.result == 'failure' || needs.fetch-resume.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
+              else
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
+              fi
+            done
+            echo "Restored missing checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
+
+  fetch-resume-3:
+    needs: fetch-resume-2
+    if: always() && (needs.fetch-resume-2.outputs.incomplete == 'true' || needs.fetch-resume-2.result == 'failure' || needs.fetch-resume-2.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
+              else
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
+              fi
+            done
+            echo "Restored missing checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
+
+  fetch-resume-4:
+    needs: fetch-resume-3
+    if: always() && (needs.fetch-resume-3.outputs.incomplete == 'true' || needs.fetch-resume-3.result == 'failure' || needs.fetch-resume-3.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      incomplete: ${{ steps.check.outputs.incomplete }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Restore missing checkpoints from branch
+        run: |
+          git fetch origin checkpoints || true
+          if git ls-remote --heads origin checkpoints | grep -q checkpoints; then
+            for f in .fetch_checkpoint.json .nc_checkpoint.json repos.json; do
+              # Skip if already present from artifact download
+              if [ -f "site/data/$f" ]; then
+                echo "  $f already present from artifact - skipping"
+                continue
+              fi
+              # Try compressed version first (new format)
+              if git show origin/checkpoints:site/data/$f.gz > site/data/$f.gz.tmp 2>/dev/null; then
+                mv site/data/$f.gz.tmp site/data/$f.gz
+                gunzip -f site/data/$f.gz
+                echo "  Restored $f (compressed)"
+              # Fall back to uncompressed (legacy format)
+              elif git show origin/checkpoints:site/data/$f > site/data/$f.tmp 2>/dev/null; then
+                mv site/data/$f.tmp site/data/$f
+                echo "  Restored $f (uncompressed)"
+              else
+                rm -f site/data/$f.tmp site/data/$f.gz.tmp
+              fi
+            done
+            echo "Restored missing checkpoints from checkpoints branch."
+          else
+            echo "No checkpoints branch found - starting fresh."
+          fi
+
+      - name: Check if fetch_data resume is needed
+        id: check_fetch_needed
+        run: |
+          if [ -f site/data/repos.json ] && [ ! -f site/data/.incomplete_fetch ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_data already complete - skipping resume."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data resume needed."
+          fi
+
+      - name: Resume repository data fetch
+        id: fetch_data
+        if: steps.check_fetch_needed.outputs.needed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_data.py --max-runtime 21000
+
+      - name: Check fetch completion
+        id: check_fetch
+        if: always() && steps.check_fetch_needed.outputs.needed == 'true'
+        run: |
+          if [ -f site/data/.incomplete_fetch ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_data did not complete (max-runtime reached)."
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch non-canonical awesome lists
+        if: steps.check_fetch_needed.outputs.needed != 'true' || steps.check_fetch.outputs.incomplete != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix develop --command python scripts/fetch_noncanonical.py --max-runtime 21000
+
+      - name: Finish from nc_done checkpoint
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f site/data/.nc_checkpoint.json ]; then
+            stage=$(jq -r '.stage // empty' site/data/.nc_checkpoint.json 2>/dev/null || echo "")
+            if [ "$stage" = "nc_done" ]; then
+              echo "Checkpoint at nc_done - finishing output writing..."
+              nix develop --command python scripts/fetch_noncanonical.py --max-runtime 600
+            fi
+          fi
+
+      - name: Check overall completion
+        id: check
+        if: always()
+        run: |
+          if [ -f site/data/.incomplete_fetch ] || [ -f site/data/.incomplete_nc ]; then
+            echo "incomplete=true" >> "$GITHUB_OUTPUT"
+            if [ -f site/data/.incomplete_fetch ]; then
+              echo "fetch_data did not complete."
+            fi
+            if [ -f site/data/.incomplete_nc ]; then
+              echo "noncanonical did not complete."
+            fi
+          else
+            echo "incomplete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: |
+            site/data/repos.json
+            site/data/.fetch_checkpoint.json
+            site/data/.nc_checkpoint.json
+          retention-days: 7
+
+      - name: Save checkpoints to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/checkpoint-stash
+          cp site/data/.fetch_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/.nc_checkpoint.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          cp site/data/repos.json /tmp/checkpoint-stash/ 2>/dev/null || true
+          git checkout --orphan checkpoints-temp
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          mkdir -p site/data
+          cp /tmp/checkpoint-stash/.fetch_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/.nc_checkpoint.json site/data/ 2>/dev/null || true
+          cp /tmp/checkpoint-stash/repos.json site/data/ 2>/dev/null || true
+          for f in site/data/.fetch_checkpoint.json site/data/.nc_checkpoint.json site/data/repos.json; do
+            if [ -f "$f" ]; then
+              gzip -f "$f"
+              git add -f "$f.gz"
+            fi
+          done
+          git commit -m "checkpoint: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]" || echo "No changes to commit"
+          git branch -M checkpoints
+          git push -f origin checkpoints
+          git checkout -f main
+
+  process:
+    needs: [fetch-main, fetch-resume, fetch-resume-2, fetch-resume-3, fetch-resume-4]
+    if: always() && ((needs.fetch-main.result == 'success' && needs.fetch-main.outputs.incomplete != 'true') || (needs.fetch-resume.result == 'success' && needs.fetch-resume.outputs.incomplete != 'true') || (needs.fetch-resume-2.result == 'success' && needs.fetch-resume-2.outputs.incomplete != 'true') || (needs.fetch-resume-3.result == 'success' && needs.fetch-resume-3.outputs.incomplete != 'true') || (needs.fetch-resume-4.result == 'success' && needs.fetch-resume-4.outputs.incomplete != 'true'))
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Ensure data directory exists
+        run: mkdir -p site/data
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: site/data/
+
+      - name: Enrich search data
+        run: nix develop --command python scripts/enrich_data.py
+
+      - name: Compute visualization data
+        run: nix develop --command python scripts/compute_viz.py
+
+      - name: Split data for lazy loading
+        run: nix develop --command python scripts/split_data.py
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
