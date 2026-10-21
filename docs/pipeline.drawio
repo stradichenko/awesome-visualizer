@@ -1,0 +1,375 @@
+<mxfile host="app.diagrams.net" agent="GitHub Copilot" version="26.0.0">
+  <diagram id="pipeline-overview" name="Data Pipeline">
+    <mxGraphModel dx="2200" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ========== TITLE ========== -->
+        <mxCell id="title" value="&lt;b&gt;Awesome Visualizer - Data Pipeline&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;fontSize=22;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="400" y="-60" width="500" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Weekly Monday 02:00 UTC via GitHub Actions &amp;nbsp;|&amp;nbsp; Manual trigger via workflow_dispatch" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="350" y="-25" width="600" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ========== EXTERNAL SOURCES (top) ========== -->
+        <mxCell id="src-group" value="External Sources" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#6c3483;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github-awesome" value="&lt;b&gt;sindresorhus/awesome&lt;/b&gt;&lt;br&gt;Master awesome list&lt;br&gt;(README with sub-list links)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#f5e6ff;strokeColor=#7c3aed;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="50" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github-rest" value="&lt;b&gt;GitHub REST API&lt;/b&gt;&lt;br&gt;README fetch&lt;br&gt;Redirect resolution&lt;br&gt;Search queries" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="240" y="50" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github-gql" value="&lt;b&gt;GitHub GraphQL API&lt;/b&gt;&lt;br&gt;Repo metrics (stars,&lt;br&gt;forks, issues, PRs,&lt;br&gt;commits, topics, license)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#e3f2fd;strokeColor=#1565c0;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="50" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github-search" value="&lt;b&gt;GitHub Search API&lt;/b&gt;&lt;br&gt;9 query/sort combos&lt;br&gt;awesome-list, curated-list&lt;br&gt;topics, stars &amp;ge; 50" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#e8f5e9;strokeColor=#2e7d32;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="50" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ========== STEP 1: fetch_data.py ========== -->
+        <mxCell id="step1" value="&lt;b&gt;1. fetch_data.py&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;font size=&quot;1&quot;&gt;&amp;bull; Crawl sindresorhus/awesome README&lt;br&gt;&amp;bull; Discover up to 800 sub-lists (depth 3)&lt;br&gt;&amp;bull; Fetch READMEs (15 parallel workers)&lt;br&gt;&amp;bull; Parse GitHub links + resources per category&lt;br&gt;&amp;bull; Batch GraphQL (30/batch, 2 workers)&lt;br&gt;&amp;bull; Resolve renames/transfers via REST redirect&lt;br&gt;&amp;bull; Deduplicate repos (first-seen wins)&lt;br&gt;&amp;bull; Compute health score (0-100)&lt;br&gt;&amp;bull; Build category/subcategory/language summaries&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontColor=#1a1a2e;fontSize=11;align=left;spacingLeft=8;spacingRight=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="50" y="200" width="300" height="175" as="geometry" />
+        </mxCell>
+
+        <!-- arrows: sources -> step1 -->
+        <mxCell id="e-awesome-s1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#7c3aed;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-awesome" target="step1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rest-s1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e65100;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-rest" target="step1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gql-s1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1565c0;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-gql" target="step1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== repos.json (intermediate) ========== -->
+        <mxCell id="repos-json-1" value="&lt;b&gt;repos.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Official repos + resources&lt;br&gt;categories, subcategories,&lt;br&gt;languages, meta&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#fff9c4;strokeColor=#f9a825;fontColor=#1a1a2e;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="420" width="160" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s1-rj1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2563eb;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step1" target="repos-json-1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s1-rj1-label" value="writes" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#2563eb;" vertex="1" connectable="0" parent="e-s1-rj1">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== STEP 2: fetch_noncanonical.py ========== -->
+        <mxCell id="step2" value="&lt;b&gt;2. fetch_noncanonical.py&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;font size=&quot;1&quot;&gt;&amp;bull; Build exclusion set from existing data&lt;br&gt;&amp;bull; Search GitHub (9 query/sort combos, 10 pages)&lt;br&gt;&amp;bull; Validate candidates (badge, link density)&lt;br&gt;&amp;bull; Split: unofficial (badge) vs non-canonical&lt;br&gt;&amp;bull; Star-range bucketed queries (200..5000)&lt;br&gt;&amp;bull; Crawl READMEs, extract repos + resources&lt;br&gt;&amp;bull; Batch GraphQL for metrics&lt;br&gt;&amp;bull; Filter categories by avg health &amp;ge; 50&lt;br&gt;&amp;bull; Checkpoint crash recovery&lt;br&gt;&amp;bull; Merge + deduplicate into repos.json&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1fae5;strokeColor=#059669;fontColor=#1a1a2e;fontSize=11;align=left;spacingLeft=8;spacingRight=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="430" y="200" width="310" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- arrows: sources -> step2 -->
+        <mxCell id="e-search-s2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2e7d32;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-search" target="step2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rest-s2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e65100;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-rest" target="step2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gql-s2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#1565c0;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="github-gql" target="step2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- repos.json feeds into step2 -->
+        <mxCell id="e-rj1-s2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f9a825;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" edge="1" source="repos-json-1" target="step2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rj1-s2-label" value="reads" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#f9a825;" vertex="1" connectable="0" parent="e-rj1-s2">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== repos.json (updated) ========== -->
+        <mxCell id="repos-json-2" value="&lt;b&gt;repos.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Official + Unofficial +&lt;br&gt;Non-canonical repos,&lt;br&gt;resources, categories&lt;br&gt;(~150 MB)&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#fff9c4;strokeColor=#f9a825;fontColor=#1a1a2e;fontSize=11;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="500" y="440" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s2-rj2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#059669;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step2" target="repos-json-2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s2-rj2-label" value="updates" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#059669;" vertex="1" connectable="0" parent="e-s2-rj2">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== STEP 3: enrich_data.py ========== -->
+        <mxCell id="step3" value="&lt;b&gt;3. enrich_data.py&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;font size=&quot;1&quot;&gt;&amp;bull; Build per-repo token vectors&lt;br&gt;&amp;nbsp;&amp;nbsp;(name x3, topics x2.5, lang x2, desc x1)&lt;br&gt;&amp;bull; Compute BM25F IDF + weighted TF scores&lt;br&gt;&amp;bull; Select top 5-15 keywords per repo&lt;br&gt;&amp;bull; Expand with 33 synonym groups&lt;br&gt;&amp;bull; Inject &lt;code&gt;kw&lt;/code&gt; field on each repo/resource&lt;br&gt;&amp;bull; Build autocomplete suggestions (top 200)&lt;br&gt;&amp;bull; Build per-category keyword tags (top 20)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;fontColor=#1a1a2e;fontSize=11;align=left;spacingLeft=8;spacingRight=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="80" y="580" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-rj2-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f9a825;strokeWidth=1.5;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="repos-json-2" target="step3" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="500" y="550" />
+              <mxPoint x="230" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-rj2-s3-label" value="reads" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#f9a825;" vertex="1" connectable="0" parent="e-rj2-s3">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- search-meta.json output from step3 -->
+        <mxCell id="search-meta" value="&lt;b&gt;search-meta.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Autocomplete suggestions&lt;br&gt;Category keyword tags&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#e8eaf6;strokeColor=#283593;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="790" width="155" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s3-sm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#283593;strokeWidth=1.5;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step3" target="search-meta" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s3-sm-label" value="writes" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#283593;" vertex="1" connectable="0" parent="e-s3-sm">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- repos.json (enriched) -->
+        <mxCell id="repos-json-3" value="&lt;b&gt;repos.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;+ &lt;code&gt;kw&lt;/code&gt; field per&lt;br&gt;repo and resource&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#fff9c4;strokeColor=#f9a825;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="225" y="790" width="140" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s3-rj3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#c62828;strokeWidth=1.5;exitX=0.7;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step3" target="repos-json-3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s3-rj3-label" value="updates" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#c62828;" vertex="1" connectable="0" parent="e-s3-rj3">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== STEP 4: compute_viz.py ========== -->
+        <mxCell id="step4" value="&lt;b&gt;4. compute_viz.py&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;font size=&quot;1&quot;&gt;&amp;bull; language_distribution (top 15, donut)&lt;br&gt;&amp;bull; health_histogram (5 buckets)&lt;br&gt;&amp;bull; star_buckets (7 ranges)&lt;br&gt;&amp;bull; category_bubbles (count, avg health/stars)&lt;br&gt;&amp;bull; license_distribution (top 10)&lt;br&gt;&amp;bull; health_by_language (avg, min 10 repos)&lt;br&gt;&amp;bull; creation_year_histogram&lt;br&gt;&amp;bull; activity_distribution (commits in 90d)&lt;br&gt;&amp;bull; topic_cooccurrence (top 50 pairs)&lt;br&gt;&amp;bull; percentile thresholds (p50-p99)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede7f6;strokeColor=#4527a0;fontColor=#1a1a2e;fontSize=11;align=left;spacingLeft=8;spacingRight=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="450" y="580" width="290" height="195" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-rj2-s4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f9a825;strokeWidth=1.5;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="repos-json-2" target="step4" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="670" y="550" />
+              <mxPoint x="595" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-rj2-s4-label" value="reads" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#f9a825;" vertex="1" connectable="0" parent="e-rj2-s4">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- viz-data.json -->
+        <mxCell id="viz-data" value="&lt;b&gt;viz-data.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;12 pre-aggregated&lt;br&gt;chart datasets&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#e8eaf6;strokeColor=#283593;fontColor=#1a1a2e;fontSize=10;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="820" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s4-vd" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#4527a0;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step4" target="viz-data" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s4-vd-label" value="writes" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#4527a0;" vertex="1" connectable="0" parent="e-s4-vd">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== STEP 5: split_data.py ========== -->
+        <mxCell id="step5" value="&lt;b&gt;5. split_data.py&lt;/b&gt;&lt;hr size=&quot;1&quot;&gt;&lt;font size=&quot;1&quot;&gt;&amp;bull; Build category-to-tier lookup map&lt;br&gt;&amp;bull; Partition repos by tier&lt;br&gt;&amp;bull; Partition resources by parent category tier&lt;br&gt;&amp;bull; Inject resource_count per category&lt;br&gt;&amp;bull; Build lightweight index with meta + tier_counts&lt;br&gt;&amp;bull; Write 7 compact JSON files&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontColor=#1a1a2e;fontSize=11;align=left;spacingLeft=8;spacingRight=8;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="140" y="920" width="290" height="135" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-rj3-s5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f9a825;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" source="repos-json-3" target="step5" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="295" y="880" />
+              <mxPoint x="227" y="880" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-rj3-s5-label" value="reads" style="edgeLabel;html=1;align=center;verticalAlign=middle;fontSize=9;fontColor=#f9a825;" vertex="1" connectable="0" parent="e-rj3-s5">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== Split output files ========== -->
+        <mxCell id="index-json" value="&lt;b&gt;index.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~1.1 MB - categories,&lt;br&gt;meta, tier_counts,&lt;br&gt;subcategories, languages&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.12;fillColor=#c8e6c9;strokeColor=#2e7d32;fontColor=#1a1a2e;fontSize=10;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1110" width="155" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="repos-off" value="&lt;b&gt;repos-official.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~50 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#bbdefb;strokeColor=#1565c0;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1110" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="repos-unoff" value="&lt;b&gt;repos-unofficial.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~17 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#bbdefb;strokeColor=#1565c0;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="335" y="1110" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="repos-nc" value="&lt;b&gt;repos-noncanonical.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~24 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#bbdefb;strokeColor=#1565c0;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="1110" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="res-off" value="&lt;b&gt;resources-official.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~44 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="1170" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="res-unoff" value="&lt;b&gt;resources-unofficial.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~6 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="335" y="1170" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="res-nc" value="&lt;b&gt;resources-noncanonical.json&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;~7 MB&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.15;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontColor=#1a1a2e;fontSize=9;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="1170" width="130" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- arrows: step5 -> split files -->
+        <mxCell id="e-s5-idx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00695c;strokeWidth=1.5;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step5" target="index-json" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s5-roff" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00695c;strokeWidth=1;exitX=0.4;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step5" target="repos-off" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s5-runoff" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00695c;strokeWidth=1;exitX=0.6;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step5" target="repos-unoff" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s5-rnc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00695c;strokeWidth=1;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="step5" target="repos-nc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== CI: git commit + push ========== -->
+        <mxCell id="ci-push" value="&lt;b&gt;CI: git add site/data/ &amp;amp;&amp;amp; git push&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Commit with [skip ci]&lt;br&gt;Deploys to GitHub Pages&lt;/font&gt;" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=20;fillColor=#f5f5f5;strokeColor=#333333;fontColor=#1a1a2e;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="1105" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-vd-ci" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#333333;strokeWidth=1;dashed=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="viz-data" target="ci-push" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="730" y="900" />
+              <mxPoint x="730" y="1105" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-sm-ci" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#333333;strokeWidth=1;dashed=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="search-meta" target="ci-push" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="10" y="870" />
+              <mxPoint x="10" y="1260" />
+              <mxPoint x="620" y="1260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========== FRONTEND SECTION ========== -->
+        <mxCell id="fe-group" value="Frontend (GitHub Pages)" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#00695c;" vertex="1" parent="1">
+          <mxGeometry x="830" y="20" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- GitHub Pages -->
+        <mxCell id="gh-pages" value="&lt;b&gt;GitHub Pages&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Static hosting from site/&lt;/font&gt;" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0277bd;fontColor=#1a1a2e;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="50" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Browser -->
+        <mxCell id="browser" value="&lt;b&gt;Browser&lt;/b&gt;" style="shape=mxgraph.mockup.containers.userMale;sketch=0;fillColor=#e8eaf6;strokeColor=#283593;fontColor=#1a1a2e;fontSize=11;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;align=center;" vertex="1" parent="1">
+          <mxGeometry x="900" y="190" width="40" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-ghp-browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#0277bd;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="gh-pages" target="browser" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- app.js loading sequence -->
+        <mxCell id="load-1" value="&lt;b&gt;1. Initial Load&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Fetch &lt;b&gt;index.json&lt;/b&gt; (1.1 MB)&lt;br&gt;Render overview cards&lt;br&gt;Show tier summary table&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontColor=#1a1a2e;fontSize=10;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="810" y="290" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="load-2" value="&lt;b&gt;2. Background Prefetch&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Fetch &lt;b&gt;repos-official.json&lt;/b&gt;&lt;br&gt;Update live stats (avg health, active)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontColor=#1a1a2e;fontSize=10;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="810" y="370" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="load-3" value="&lt;b&gt;3. On-Demand (user action)&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Expand segment -&amp;gt; fetch tier repos&lt;br&gt;Click category -&amp;gt; fetch tier repos + resources&lt;br&gt;Search -&amp;gt; fetch all tiers if needed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontColor=#1a1a2e;fontSize=10;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="810" y="440" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="load-4" value="&lt;b&gt;4. Visualizations&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;Fetch &lt;b&gt;viz-data.json&lt;/b&gt;&lt;br&gt;+ &lt;b&gt;search-meta.json&lt;/b&gt;&lt;br&gt;Render charts (charts.js)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede7f6;strokeColor=#4527a0;fontColor=#1a1a2e;fontSize=10;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="810" y="525" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- arrows between load steps -->
+        <mxCell id="e-b-l1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#333333;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="browser" target="load-1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-l1-l2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="load-1" target="load-2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-l2-l3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="load-2" target="load-3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-l3-l4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="load-3" target="load-4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== shared.py note ========== -->
+        <mxCell id="shared-note" value="&lt;b&gt;shared.py&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot;&gt;compute_health() (0-100):&lt;br&gt;Stars 20 | Commits90d 20 | Recency 20&lt;br&gt;Not-archived 10 | License 8 | PRs 8&lt;br&gt;Description 7 | Fork engagement 7&lt;br&gt;&lt;br&gt;Used by fetch_data.py &amp;amp; fetch_noncanonical.py&lt;/font&gt;" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#f5f5f5;strokeColor=#999999;fontColor=#333333;fontSize=10;align=left;spacingLeft=8;spacingRight=8;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="660" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- ========== LEGEND ========== -->
+        <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cccccc;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="800" width="250" height="175" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="&lt;b&gt;Legend&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="800" y="805" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="830" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-1t" value="fetch_data.py (official crawl)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="828" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1fae5;strokeColor=#059669;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="850" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-2t" value="fetch_noncanonical.py (discovery)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="848" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c62828;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="870" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-3t" value="enrich_data.py (BM25F search keywords)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="868" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede7f6;strokeColor=#4527a0;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="890" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-4t" value="compute_viz.py (chart pre-aggregation)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="888" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2f1;strokeColor=#00695c;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="910" width="20" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-5t" value="split_data.py (lazy-load chunking)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="908" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-6" value="" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;size=0.2;fillColor=#fff9c4;strokeColor=#f9a825;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="930" width="20" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-6t" value="Data file (JSON)" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="929" width="200" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-7" value="" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=6;fillColor=#e3f2fd;strokeColor=#1565c0;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="950" width="20" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-7t" value="External API / data source" style="text;html=1;align=left;fontSize=9;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="825" y="950" width="200" height="18" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
