@@ -1,0 +1,33 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "UP",     # pyupgrade
+    "S",      # flake8-bandit (security)
+    "RET",    # flake8-return
+    "C4",     # flake8-comprehensions
+    "PTH",    # flake8-use-pathlib
+]
+ignore = [
+    "E501",   # line length handled by formatter
+    "S311",   # random for jitter/delay - not crypto
+    "S603",   # subprocess calls (not used but avoid false positives)
+    "S607",   # partial path to executable
+    "B904",   # raise-without-from-inside-except (too noisy in urllib code)
+    "UP015",  # redundant open mode (keep explicit for clarity)
+    "RET504", # unnecessary assignment before return
+]
+
+[lint.per-file-ignores]
+"scripts/fetch_noncanonical.py" = ["S310"]  # urllib.request.urlopen audit
+"scripts/fetch_data.py" = ["S310"]
+
+[format]
+quote-style = "double"

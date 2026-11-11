@@ -1,0 +1,80 @@
+:root {
+    /* -- Scaling -- */
+    --av-scale-ratio: 1.618;
+    --av-scale-half: 1.272;
+
+    /* -- Spacing -- */
+    --av-size-3xs: 0.25rem;
+    --av-size-2xs: 0.375rem;
+    --av-size-xs: 0.5rem;
+    --av-size-sm: 0.75rem;
+    --av-size-md: 1rem;
+    --av-size-lg: 1.272rem;
+    --av-size-xl: 1.618rem;
+    --av-size-2xl: 2.618rem;
+    --av-size-3xl: 4.236rem;
+
+    /* -- Surfaces -- */
+    --av-bg: #0d1117;
+    --av-surface-1: #161b22;
+    --av-surface-2: #1c2129;
+    --av-surface-3: #21262d;
+
+    /* -- Borders -- */
+    --av-border: #30363d;
+    --av-border-emphasis: #484f58;
+
+    /* -- Text -- */
+    --av-text: #e6edf3;
+    --av-text-secondary: #8b949e;
+    --av-text-tertiary: #656d76;
+    --av-text-on-emphasis: #ffffff;
+
+    /* -- Accent -- */
+    --av-primary: #6c63ff;
+    --av-primary-emphasis: #8b83ff;
+    --av-primary-muted: rgba(108, 99, 255, 0.15);
+
+    /* -- Semantic -- */
+    --av-success: #3fb950;
+    --av-success-muted: rgba(63, 185, 80, 0.15);
+    --av-warning: #d29922;
+    --av-warning-muted: rgba(210, 153, 34, 0.15);
+    --av-danger: #f85149;
+    --av-danger-muted: rgba(248, 81, 73, 0.15);
+    --av-info: #58a6ff;
+    --av-info-muted: rgba(88, 166, 255, 0.15);
+    --av-neutral: #8b949e;
+
+    /* -- Typography -- */
+    --av-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --av-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+    --av-font-size-xs: 0.75rem;
+    --av-font-size-sm: 0.8125rem;
+    --av-font-size-base: 0.875rem;
+    --av-font-size-md: 1rem;
+    --av-font-size-lg: 1.125rem;
+    --av-font-size-xl: 1.375rem;
+    --av-font-size-2xl: 1.75rem;
+    --av-font-weight-normal: 400;
+    --av-font-weight-medium: 500;
+    --av-font-weight-semibold: 600;
+    --av-font-weight-bold: 700;
+    --av-line-height-tight: 1.25;
+    --av-line-height-base: 1.5;
+    --av-line-height-loose: 1.75;
+
+    /* -- Layout -- */
+    --av-radius-sm: 4px;
+    --av-radius-md: 6px;
+    --av-radius-lg: 8px;
+    --av-radius-pill: 50rem;
+    --av-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --av-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --av-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --av-transition-fast: 120ms ease;
+    --av-transition-base: 200ms ease;
+
+    /* -- Content -- */
+    --av-content-max: 1400px;
+}
