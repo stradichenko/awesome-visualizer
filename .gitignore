@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Nix
+result
+result-*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Pipeline checkpoints
+.nc_checkpoint.json*
+.fetch_checkpoint.json*
+site/data/.pipeline/
+
+# Generated data files (CI rebuilds these)
+site/data/repos.json
+site/data/search-meta.json
+site/data/viz-data.json
+site/data/index.json
+site/data/repos-*.json
+site/data/resources-*.json
+
+# Claude Code
+CLAUDE.md
